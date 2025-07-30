@@ -5,8 +5,8 @@ import './globals.css'
 const inter = Inter({ subsets: ['latin', 'cyrillic'] })
 
 export const metadata: Metadata = {
-  title: 'Битрикс24 Дашборд - IT Отдел',
-  description: 'Мониторинг задач IT отдела',
+  title: 'Битрикс24 Дашборд',
+  description: 'Мониторинг задач',
 }
 
 export default function RootLayout({

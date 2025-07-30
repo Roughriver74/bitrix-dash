@@ -6,6 +6,7 @@ import { DashboardData } from '@/lib/bitrix/types';
 import { RefreshCw, Maximize2, Monitor } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { useDashboardStream } from '@/hooks/useDashboardStream';
 
 const VIEWS = [
   { id: 'dashboard', name: 'Рейтинг IT отдела', component: 'dashboard' }
