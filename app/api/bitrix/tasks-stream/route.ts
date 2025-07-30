@@ -67,10 +67,10 @@ export async function GET(request: NextRequest) {
         
         const userIds = await deptService.getAllDepartmentUsers(department.ID, true);
 
-        // Get all tasks (active and completed) in one request
+        // Get active and completed tasks with optimized filters
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
           type: 'progress', 
-          message: 'Загрузка всех задач...',
+          message: 'Загрузка активных и завершенных задач...',
           progress: 30 
         })}\n\n`));
         
@@ -78,7 +78,7 @@ export async function GET(request: NextRequest) {
         
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
           type: 'progress', 
-          message: 'Задачи загружены и разделены...',
+          message: 'Задачи успешно загружены...',
           progress: 60 
         })}\n\n`));
 

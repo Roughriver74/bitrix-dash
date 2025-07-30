@@ -47,8 +47,8 @@ export async function GET(request: Request) {
     const userIds = await deptService.getAllDepartmentUsers(department.ID, true);
     console.log(`✅ Найдено ${userIds.length} пользователей`);
 
-    // Get all tasks (active and completed) in one optimized request
-    console.log('📋 Получение всех задач (активных и завершенных)...');
+    // Get active and completed tasks with optimized filters
+    console.log('📋 Получение активных и завершенных задач с фильтрами...');
     const tasksStart = Date.now();
     const { activeTasks, completedTasks } = await taskService.getAllTasks(userIds);
     console.log(`✅ Получено ${activeTasks.length} активных и ${completedTasks.length} завершенных задач за ${Date.now() - tasksStart}мс`);
