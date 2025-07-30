@@ -59,8 +59,16 @@ export function UnifiedDashboardTv({ data }: UnifiedDashboardTvProps) {
       const completedTasks = data.completedTasks.filter(task => task.RESPONSIBLE_ID === userId);
       const inProgressTasks = activeTasks.filter(task => task.isInProgress);
       
-      // Пропускаем сотрудников с менее 2 активными задачами
-      if (activeTasks.length < 2) return null;
+      // Пропускаем сотрудников без задач (активных и завершенных)
+      if (activeTasks.length === 0 && completedTasks.length === 0) {
+        console.log(`❌ Пропускаем сотрудника ${userName} - нет задач`);
+        return null;
+      }
+      
+      // Логируем информацию о сотруднике
+      if (activeTasks.length > 0 || completedTasks.length > 0) {
+        console.log(`✅ Сотрудник ${userName}: активных=${activeTasks.length}, завершенных=${completedTasks.length}`);
+      }
       
       // Расчет средней скорости выполнения за последние 30 дней
       const completedLast30Days = completedTasks.filter(task => {
@@ -181,6 +189,8 @@ export function UnifiedDashboardTv({ data }: UnifiedDashboardTvProps) {
     })
     .filter(Boolean)
     .sort((a, b) => b!.rating - a!.rating);
+
+  console.log(`📊 Итого в рейтинге: ${activeEmployees.length} сотрудников из ${data.users.length} всего`);
 
   // Автоматическое переключение: общий вид -> сотрудник 1 -> сотрудник 2 -> ... -> общий вид
   useEffect(() => {
