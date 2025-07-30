@@ -103,7 +103,7 @@ export function useDashboardStream() {
                   if (currentChunkedData && typeof json.index === 'number' && json.data && typeof json.data === 'string') {
                     const newChunks: string[] = [...currentChunkedData.chunks];
                     newChunks[json.index] = json.data;
-                    const newReceivedChunks = currentChunkedData.receivedChunks + 1;
+                    const newReceivedChunks: number = currentChunkedData.receivedChunks + 1;
                     
                     console.log(`📦 Получена часть ${json.index + 1}/${currentChunkedData.totalChunks} (${json.data.length} символов)`);
                     
