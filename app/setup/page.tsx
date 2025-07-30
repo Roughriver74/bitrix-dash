@@ -39,8 +39,8 @@ export default function SetupPage() {
     setError('');
     setLoading(true);
 
-    // Validate webhook URL format
-    if (!webhookUrl.match(/^https:\/\/.*\.bitrix24\.ru\/rest\/\d+\/\w+\/$/)) {
+    // Validate webhook URL format - allow any domain with /rest/ID/token/ structure
+    if (!webhookUrl.match(/^https:\/\/[^\/]+\/rest\/\d+\/[\w-]+\/$/)) {
       setError('Неверный формат webhook URL. Убедитесь, что URL заканчивается на /');
       setLoading(false);
       return;

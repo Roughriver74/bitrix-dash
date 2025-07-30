@@ -32,8 +32,8 @@ export async function POST(request: Request) {
       );
     }
 
-    // Validate webhook URL format
-    if (!webhookUrl.match(/^https:\/\/.*\.bitrix24\.ru\/rest\/\d+\/\w+\/$/)) {
+    // Validate webhook URL format - allow any domain with /rest/ID/token/ structure
+    if (!webhookUrl.match(/^https:\/\/[^\/]+\/rest\/\d+\/[\w-]+\/$/)) {
       return NextResponse.json(
         { error: 'Неверный формат webhook URL' },
         { status: 400 }
