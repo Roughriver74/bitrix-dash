@@ -47,25 +47,40 @@ export function useDashboardStream() {
     } | null = null;
 
     try {
+      console.log('🔌 Начинаем SSE подключение...');
       const response = await fetch(`/api/bitrix/tasks-stream${refresh ? '?refresh=true' : ''}`);
+      console.log('📡 Ответ получен, статус:', response.status, response.statusText);
       
       if (!response.ok) {
+        console.error('❌ HTTP ошибка:', response.status, response.statusText);
         throw new Error('Ошибка загрузки данных');
       }
 
+      console.log('📖 Получаем reader для body...');
       const reader = response.body?.getReader();
       const decoder = new TextDecoder();
 
       if (!reader) {
+        console.error('❌ Reader недоступен');
         throw new Error('Не удалось получить поток данных');
       }
+      
+      console.log('✅ Reader готов, начинаем чтение...');
 
       while (true) {
+        console.log('🔄 Читаем chunk...');
         const { done, value } = await reader.read();
-        if (done) break;
+        console.log('📦 Chunk получен:', { done, valueLength: value?.length });
+        
+        if (done) {
+          console.log('✅ Чтение завершено');
+          break;
+        }
 
         const chunk = decoder.decode(value);
+        console.log('📝 Decoded chunk длина:', chunk.length);
         const lines = chunk.split('\n');
+        console.log('📋 Разделено на строки:', lines.length);
 
         for (const line of lines) {
           if (line.trim() && line.startsWith('data: ')) {
@@ -171,7 +186,10 @@ export function useDashboardStream() {
           }
         }
       }
+      
+      console.log('🏁 SSE поток завершен');
     } catch (err) {
+      console.error('❌ Ошибка в fetchData:', err);
       setError(err instanceof Error ? err.message : 'Ошибка загрузки');
       setLoading(false);
     }
