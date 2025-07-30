@@ -67,6 +67,8 @@ export function useDashboardStream() {
       
       console.log('✅ Reader готов, начинаем чтение...');
 
+      let buffer = ''; // Буфер для накопления неполных SSE сообщений
+      
       while (true) {
         console.log('🔄 Читаем chunk...');
         const { done, value } = await reader.read();
@@ -79,17 +81,27 @@ export function useDashboardStream() {
 
         const chunk = decoder.decode(value);
         console.log('📝 Decoded chunk длина:', chunk.length);
-        const lines = chunk.split('\n');
-        console.log('📋 Разделено на строки:', lines.length);
-
-        for (const line of lines) {
-          if (line.trim() && line.startsWith('data: ')) {
-            try {
-              const jsonData = line.slice(6);
-              console.log('📨 Получено SSE сообщение:', jsonData.substring(0, 200) + '...');
-              
-              const json: StreamResponse = JSON.parse(jsonData);
-              console.log('📋 Тип сообщения:', json.type);
+        
+        // Добавляем к буферу
+        buffer += chunk;
+        
+        // Ищем полные SSE сообщения (заканчиваются на \n\n)
+        let messageEndIndex;
+        while ((messageEndIndex = buffer.indexOf('\n\n')) !== -1) {
+          const completeMessage = buffer.slice(0, messageEndIndex);
+          buffer = buffer.slice(messageEndIndex + 2);
+          
+          console.log('📋 Полное SSE сообщение найдено:', completeMessage.length, 'символов');
+          
+          const lines = completeMessage.split('\n');
+          for (const line of lines) {
+            if (line.trim() && line.startsWith('data: ')) {
+              try {
+                const jsonData = line.slice(6);
+                console.log('📨 Получено SSE сообщение:', jsonData.substring(0, 200) + '...');
+                
+                const json: StreamResponse = JSON.parse(jsonData);
+                console.log('📋 Тип сообщения:', json.type);
               
               switch (json.type) {
                 case 'progress':
@@ -185,6 +197,7 @@ export function useDashboardStream() {
             }
           }
         }
+      }
       }
       
       console.log('🏁 SSE поток завершен');
