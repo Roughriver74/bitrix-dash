@@ -155,8 +155,8 @@ export async function GET(request: NextRequest) {
         const resultJsonString = JSON.stringify(result);
         console.log(`📊 Размер данных: ${resultJsonString.length} символов`);
         
-        // Check if payload is too large for single SSE message (limit to ~100KB chunks)
-        const MAX_CHUNK_SIZE = 100000;
+        // Always use chunked transmission for large payloads to avoid SSE disconnection issues
+        const MAX_CHUNK_SIZE = 50000; // Reduced chunk size for better reliability
         
         if (resultJsonString.length > MAX_CHUNK_SIZE) {
           console.log(`📦 Большой payload (${resultJsonString.length} символов), используем chunked передачу`);
@@ -176,7 +176,7 @@ export async function GET(request: NextRequest) {
             totalSize: resultJsonString.length
           })}\n\n`));
           
-          // Send each chunk
+          // Small delay between chunks to prevent overwhelming the connection
           for (let i = 0; i < chunks.length; i++) {
             controller.enqueue(encoder.encode(`data: ${JSON.stringify({
               type: 'chunk',
@@ -185,13 +185,23 @@ export async function GET(request: NextRequest) {
               isLast: i === chunks.length - 1
             })}\n\n`));
             console.log(`📦 Отправлена часть ${i + 1}/${chunks.length} (${chunks[i].length} символов)`);
+            
+            // Small delay between chunks (10ms) to prevent buffer overflow
+            if (i < chunks.length - 1) {
+              await new Promise(resolve => setTimeout(resolve, 10));
+            }
           }
+          
+          // Ensure final completion message is sent after chunks
+          await new Promise(resolve => setTimeout(resolve, 50));
           
           // Send completion message
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({
             type: 'complete',
             loadTime: Date.now() - startTime
           })}\n\n`));
+          
+          console.log('📦 Chunked передача завершена');
         } else {
           // Send as single message for smaller payloads
           const finalMessage = {
@@ -201,6 +211,7 @@ export async function GET(request: NextRequest) {
           };
           
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(finalMessage)}\n\n`));
+          console.log('📤 Одиночное сообщение отправлено');
         }
         
         console.log('✅ Финальные данные отправлены');
