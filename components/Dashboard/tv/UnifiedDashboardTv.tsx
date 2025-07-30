@@ -155,21 +155,6 @@ export function UnifiedDashboardTv({ data }: UnifiedDashboardTvProps) {
         Math.floor(avgInactiveDays) * 1     // Меньший штраф за неактивность
       );
       
-      // Детальное логирование для отладки рейтинга Максима Данилина
-      if (userName === 'Максим Данилин') {
-        console.log(`🔍 Детальный расчет рейтинга для ${userName}:`, {
-          completedLast30Days: completedLast30Days.length,
-          overdueTasks,
-          avgInactiveDays: Math.floor(avgInactiveDays),
-          efficiency,
-          'completedLast30Days * 10': completedLast30Days.length * 10,
-          'overdueTasks * 20': overdueTasks * 20,
-          'avgInactiveDays * 2': Math.floor(avgInactiveDays) * 2,
-          'efficiency bonus': Math.floor(efficiency / 10),
-          'итоговый расчет': completedLast30Days.length * 10 - overdueTasks * 20 - Math.floor(avgInactiveDays) * 2 + Math.floor(efficiency / 10),
-          'финальный рейтинг': rating
-        });
-      }
       
       return {
         id: userId,
