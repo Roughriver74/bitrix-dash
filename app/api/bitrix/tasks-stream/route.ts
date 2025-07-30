@@ -11,40 +11,53 @@ const CACHE_TTL = 900; // 15 minutes
 export async function GET(request: NextRequest) {
   const encoder = new TextEncoder();
   
+  console.log('🚀 SSE Stream начат:', new Date().toISOString());
+  
   const stream = new ReadableStream({
     async start(controller) {
       const startTime = Date.now();
+      console.log('📡 SSE controller.start вызван');
       
       try {
         // Send initial progress
+        console.log('📤 Отправка начального сообщения...');
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
           type: 'progress', 
           message: 'Начало загрузки данных...',
           progress: 0 
         })}\n\n`));
+        console.log('✅ Начальное сообщение отправлено');
 
         const { searchParams } = new URL(request.url);
         const forceRefresh = searchParams.get('refresh') === 'true';
 
         // Check cache
+        console.log('🔍 Проверка кэша, forceRefresh:', forceRefresh);
         if (!forceRefresh) {
           const cached = await cache.get('dashboard:tasks');
           if (cached) {
+            console.log('✅ Данные найдены в кэше, отправляем...');
             controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
               type: 'complete', 
               data: cached 
             })}\n\n`));
             controller.close();
+            console.log('🔒 Stream закрыт (кэш)');
             return;
           }
+          console.log('❌ Кэш пуст, продолжаем загрузку...');
         }
 
+        console.log('🔧 Получение конфигурации...');
         const webhookUrl = await getConfiguredWebhookUrl();
         const departmentName = await getConfiguredDepartmentName();
+        console.log('✅ Конфигурация получена:', { webhookUrl: webhookUrl ? '✓' : '✗', departmentName });
 
+        console.log('🔌 Создание клиентов...');
         const client = new BitrixClient(webhookUrl);
         const deptService = new DepartmentService(client);
         const taskService = new TaskService(client);
+        console.log('✅ Клиенты созданы');
         
         // Get department
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
@@ -195,11 +208,24 @@ export async function GET(request: NextRequest) {
         controller.close();
         console.log('🔒 Stream закрыт');
       } catch (error) {
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
-          type: 'error', 
-          error: error instanceof Error ? error.message : 'Неизвестная ошибка' 
-        })}\n\n`));
-        controller.close();
+        console.error('❌ SSE Stream ошибка:', error);
+        console.error('📋 Stack trace:', error instanceof Error ? error.stack : 'No stack trace');
+        
+        try {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
+            type: 'error', 
+            error: error instanceof Error ? error.message : 'Неизвестная ошибка' 
+          })}\n\n`));
+        } catch (enqueueError) {
+          console.error('❌ Ошибка отправки error сообщения:', enqueueError);
+        }
+        
+        try {
+          controller.close();
+          console.log('🔒 Stream закрыт (ошибка)');
+        } catch (closeError) {
+          console.error('❌ Ошибка закрытия stream:', closeError);
+        }
       }
     }
   });
