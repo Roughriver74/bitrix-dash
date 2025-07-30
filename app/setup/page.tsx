@@ -64,6 +64,14 @@ export default function SetupPage() {
       }
 
       setSuccess(true);
+      
+      // На Vercel покажем предупреждение о необходимости env переменных
+      if (process.env.NODE_ENV === 'production') {
+        setTimeout(() => {
+          alert('Важно: На Vercel конфигурация сохраняется только в памяти. Для постоянной настройки используйте переменные окружения BITRIX_WEBHOOK_URL и BITRIX_DEPARTMENT_NAME в настройках проекта.');
+        }, 500);
+      }
+      
       setTimeout(() => {
         router.push('/dashboard');
       }, 2000);
