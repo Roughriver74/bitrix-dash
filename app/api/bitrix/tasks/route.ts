@@ -9,70 +9,41 @@ import { getConfiguredWebhookUrl, getConfiguredDepartmentName } from '@/lib/conf
 const CACHE_TTL = 900; // 15 minutes
 
 export async function GET(request: Request) {
-  const startTime = Date.now();
-  console.log('🚀 API /api/bitrix/tasks - Начало обработки запроса');
-  
   try {
     const { searchParams } = new URL(request.url);
     const forceRefresh = searchParams.get('refresh') === 'true';
 
     // Check cache
     if (!forceRefresh) {
-      console.log('📦 Проверка кэша...');
       const cached = await cache.get('dashboard:tasks');
       if (cached) {
-        console.log('✅ Данные из кэша, время выполнения:', Date.now() - startTime, 'мс');
         return NextResponse.json(cached);
       }
-      console.log('❌ Кэш пуст или устарел');
     }
 
     const webhookUrl = await getConfiguredWebhookUrl();
     const departmentName = await getConfiguredDepartmentName();
-    console.log('🔗 Webhook URL настроен');
 
     const client = new BitrixClient(webhookUrl);
     const deptService = new DepartmentService(client);
     const taskService = new TaskService(client);
     
     // Get department and users
-    console.log(`🏢 Получение департамента "${departmentName}"...`);
     const department = await deptService.getDepartmentByName(departmentName);
     if (!department) {
       throw new Error(`Департамент "${departmentName}" не найден`);
     }
-    console.log(`✅ Департамент найден: ${department.NAME} (ID: ${department.ID})`);
 
-    console.log('👥 Получение пользователей департамента...');
     const userIds = await deptService.getAllDepartmentUsers(department.ID, true);
-    console.log(`✅ Найдено ${userIds.length} пользователей`);
-
-    // Get active and completed tasks with optimized filters
-    console.log('📋 Получение активных и завершенных задач с фильтрами...');
-    const tasksStart = Date.now();
     const { activeTasks, completedTasks } = await taskService.getAllTasks(userIds);
-    console.log(`✅ Получено ${activeTasks.length} активных и ${completedTasks.length} завершенных задач за ${Date.now() - tasksStart}мс`);
 
     // Get user information
-    console.log('👤 Получение информации о пользователях...');
     const users = await getUsers(userIds, client);
-    console.log(`✅ Получена информация о ${users.length} пользователях`);
-    
-    // Логируем пользователей для поиска Павла Свистунова
-    const pavel = users.find(u => u.NAME?.includes('Павел') || u.LAST_NAME?.includes('Свистунов'));
-    if (pavel) {
-      console.log('🔍 Найден Павел Свистунов:', { 
-        id: pavel.ID, 
-        name: `${pavel.NAME} ${pavel.LAST_NAME}` 
-      });
-    }
 
     // Skip absence information for now (API methods not available)
-    console.log('📅 Пропускаем получение отсутствий (API недоступен)');
     const absences: Record<string, any> = {};
 
     // Generate statistics
-    console.log('📊 Генерация статистики...');
     const stats = generateStats(activeTasks, completedTasks, users, absences);
 
     const result = {
@@ -86,19 +57,11 @@ export async function GET(request: Request) {
     };
 
     // Save to cache
-    console.log('💾 Сохранение в кэш...');
     await cache.setex('dashboard:tasks', CACHE_TTL, result);
-
-    const totalTime = Date.now() - startTime;
-    console.log(`✅ Запрос выполнен успешно за ${totalTime}мс`);
-    console.log(`📈 Статистика: ${stats.totalActive} активных, ${stats.totalCompleted} завершенных задач`);
     
     return NextResponse.json(result);
   } catch (error) {
     console.error('❌ API Error:', error);
-    console.error('Stack trace:', error instanceof Error ? error.stack : 'No stack trace');
-    const totalTime = Date.now() - startTime;
-    console.log(`⏱️ Время до ошибки: ${totalTime}мс`);
     
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Failed to fetch data' },
@@ -127,8 +90,6 @@ async function getUsers(userIds: string[], client: BitrixClient): Promise<Bitrix
 }
 
 function generateStats(activeTasks: BitrixTask[], completedTasks: BitrixTask[], users: BitrixUser[], absences: Record<string, UserAbsenceInfo>): TaskStats {
-  console.log(`📊 Начало генерации статистики: ${activeTasks.length} активных, ${completedTasks.length} завершенных задач`);
-  
   const stats: TaskStats = {
     totalActive: activeTasks.length,
     totalCompleted: completedTasks.length,
@@ -169,7 +130,6 @@ function generateStats(activeTasks: BitrixTask[], completedTasks: BitrixTask[], 
     };
   });
 
-  console.log('📊 Обработка активных задач...');
   // Обрабатываем активные задачи одним проходом
   activeTasks.forEach(task => {
     // Общая статистика
@@ -210,7 +170,6 @@ function generateStats(activeTasks: BitrixTask[], completedTasks: BitrixTask[], 
     }
   });
 
-  console.log('📊 Обработка завершенных задач...');
   // Обрабатываем завершенные задачи одним проходом
   completedTasks.forEach(task => {
     const userId = task.RESPONSIBLE_ID;
@@ -219,7 +178,6 @@ function generateStats(activeTasks: BitrixTask[], completedTasks: BitrixTask[], 
     }
   });
 
-  console.log('📊 Формирование статистики по сотрудникам...');
   // Формируем финальную статистику по сотрудникам
   users.forEach(user => {
     const userId = user.ID;
@@ -241,6 +199,5 @@ function generateStats(activeTasks: BitrixTask[], completedTasks: BitrixTask[], 
     };
   });
 
-  console.log('✅ Генерация статистики завершена');
   return stats;
 }

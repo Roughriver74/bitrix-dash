@@ -5,62 +5,44 @@ export class TaskService {
   constructor(private client: BitrixClient) {}
 
   async getAllTasks(userIds: string[]): Promise<{ activeTasks: BitrixTask[], completedTasks: BitrixTask[] }> {
-    console.log(`📋 TaskService: Начало получения активных и завершенных задач для ${userIds.length} пользователей`);
-    
     if (userIds.length === 0) {
-      console.log('⚠️ Список пользователей пуст, возвращаем пустые массивы');
       return { activeTasks: [], completedTasks: [] };
     }
     
     // Дата для фильтрации завершенных задач (последние 30 дней)
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    console.log(`📅 Дата для завершенных задач: ${thirtyDaysAgo.toISOString()}`);
     
     const userChunks = this.chunkArray(userIds, 10);
     const allActiveTasks: BitrixTask[] = [];
     const allCompletedTasks: BitrixTask[] = [];
     
     for (const [index, chunk] of userChunks.entries()) {
-      console.log(`🔄 Обработка группы ${index + 1}/${userChunks.length} (${chunk.length} пользователей)`);
-      console.log(`   User IDs: ${chunk.join(', ')}`);
-      
       try {
         // Получаем активные задачи (исключаем завершенные и отложенные)
-        console.log(`   📋 Получение активных задач...`);
-        const activeStart = Date.now();
         const activeTasks = await this.client.getAllTasks({
           RESPONSIBLE_ID: chunk,
           '!STATUS': [5, 6] // Исключаем завершенные (5) и отложенные (6)
         });
-        console.log(`   ✅ Получено ${activeTasks.length} активных задач за ${Date.now() - activeStart}мс`);
         allActiveTasks.push(...activeTasks);
         
         // Получаем завершенные задачи за последние 30 дней
-        console.log(`   ✔️ Получение завершенных задач за 30 дней...`);
-        const completedStart = Date.now();
         const completedTasks = await this.client.getAllTasks({
           RESPONSIBLE_ID: chunk,
           STATUS: 5, // Только завершенные
           '>=CLOSED_DATE': thirtyDaysAgo.toISOString()
         });
-        console.log(`   ✅ Получено ${completedTasks.length} завершенных задач за ${Date.now() - completedStart}мс`);
         allCompletedTasks.push(...completedTasks);
         
       } catch (error) {
-        console.error(`   ❌ Ошибка при получении задач для группы ${index + 1}:`, error);
+        console.error(`❌ Ошибка при получении задач для группы ${index + 1}:`, error);
         // Продолжаем с другими группами
       }
     }
     
-    console.log(`📊 Всего получено: ${allActiveTasks.length} активных, ${allCompletedTasks.length} завершенных задач`);
-    console.log('🔧 Обогащение данных задач...');
-    
     // Обогащаем данные для обеих групп
     const enrichedActiveTasks = await this.enrichTasksData(allActiveTasks);
     const enrichedCompletedTasks = await this.enrichTasksData(allCompletedTasks);
-    
-    console.log('✅ Обогащение завершено');
     
     return {
       activeTasks: enrichedActiveTasks,
@@ -74,27 +56,18 @@ export class TaskService {
   }
 
   async getCompletedTasks(userIds: string[], days: number = 30): Promise<BitrixTask[]> {
-    console.log(`✔️ TaskService: Начало получения завершенных задач за ${days} дней`);
-    
     const dateFrom = new Date();
     dateFrom.setDate(dateFrom.getDate() - days);
-    console.log(`📅 Дата с которой ищем: ${dateFrom.toISOString()}`);
     
     const userChunks = this.chunkArray(userIds, 10);
     const allTasks: BitrixTask[] = [];
     
     for (const [index, chunk] of userChunks.entries()) {
-      console.log(`🔄 Обработка группы ${index + 1}/${userChunks.length} (${chunk.length} пользователей)`);
-      
       try {
-        const chunkStart = Date.now();
-        
         // Получаем ВСЕ задачи (включая завершенные)
         const allUserTasks = await this.client.getAllTasks({
           RESPONSIBLE_ID: chunk
         });
-        
-        console.log(`   📦 Получено всего ${allUserTasks.length} задач`);
         
         // Фильтруем завершенные задачи
         const completedTasks = allUserTasks.filter((task: any) => {
@@ -105,41 +78,20 @@ export class TaskService {
           // Проверяем дату закрытия
           const closedDate = task.CLOSED_DATE || task.closedDate || task.CHANGED_DATE || task.changedDate;
           if (!closedDate) {
-            console.log(`   ⚠️ Задача ${task.ID || task.id} без даты закрытия`);
             return false;
           }
           
           const taskClosedDate = new Date(closedDate);
           const isInRange = taskClosedDate >= dateFrom;
           
-          if (!isInRange) {
-            console.log(`   📅 Задача ${task.ID || task.id} закрыта ${closedDate} (вне диапазона)`);
-          }
-          
           return isInRange;
         });
         
-        console.log(`   ✅ Из них завершенных за последние ${days} дней: ${completedTasks.length} за ${Date.now() - chunkStart}мс`);
-        
-        // Выведем первые несколько завершенных задач для отладки
-        if (completedTasks.length > 0 && index === 0) {
-          const firstTask = completedTasks[0];
-          console.log('   🔍 Пример завершенной задачи:', {
-            id: firstTask.ID || firstTask.id,
-            title: firstTask.TITLE || firstTask.title,
-            status: firstTask.STATUS || firstTask.status,
-            closedDate: firstTask.CLOSED_DATE || firstTask.closedDate,
-            responsibleId: firstTask.RESPONSIBLE_ID || firstTask.responsibleId
-          });
-        }
-        
         allTasks.push(...completedTasks);
       } catch (error) {
-        console.error(`   ❌ Ошибка при получении завершенных задач для группы ${index + 1}:`, error);
+        console.error(`❌ Ошибка при получении завершенных задач для группы ${index + 1}:`, error);
       }
     }
-    
-    console.log(`📊 Всего получено ${allTasks.length} завершенных задач за последние ${days} дней`);
     
     // Обогащаем данные
     const enrichedTasks = await this.enrichTasksData(allTasks);
@@ -148,12 +100,8 @@ export class TaskService {
   }
 
   private async enrichTasksData(tasks: BitrixTask[]): Promise<BitrixTask[]> {
-    console.log(`🔧 Начало обогащения ${tasks.length} задач`);
     const enrichedTasks: BitrixTask[] = [];
     const now = new Date();
-    
-    // Подсчитаем статистику по статусам (только общее количество для производительности)
-    console.log(`📊 Обогащение ${tasks.length} задач...`);
     
     // Быстрое обогащение без истории - используем только CHANGED_DATE
     for (const task of tasks) {
@@ -199,10 +147,6 @@ export class TaskService {
         executionTime = Math.floor(
           (now.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)
         );
-        // Логируем только первые 3 задачи в работе для отладки
-        if (enrichedTasks.filter(t => t.isInProgress).length < 3) {
-          console.log(`   🔷 Задача в работе: ${mappedTask.TITLE?.substring(0, 50)}... (ID: ${mappedTask.ID}, время: ${executionTime} дней)`);
-        }
       }
       
       enrichedTasks.push({
@@ -217,8 +161,6 @@ export class TaskService {
       });
     }
     
-    console.log(`✅ Обогащение завершено для ${enrichedTasks.length} задач`);
-    
     // Если нужна детальная история, можно запросить ее позже только для видимых задач
     return enrichedTasks;
   }
@@ -231,8 +173,6 @@ export class TaskService {
 
   // Отсутствия временно отключены - API методы недоступны в текущей конфигурации Bitrix24
   async getAbsenceEvents(userIds: string[]): Promise<Record<string, any>> {
-    console.log(`📅 TaskService: Пропускаем получение отсутствий (API недоступен)`);
-    
     // Возвращаем пустую информацию об отсутствиях
     const absenceInfo: Record<string, any> = {};
     for (const userId of userIds) {

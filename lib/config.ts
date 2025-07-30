@@ -36,9 +36,6 @@ export async function readConfig(): Promise<AppConfig> {
 export async function writeConfig(config: AppConfig): Promise<void> {
   // Update cache
   configCache = config;
-  
-  // On Vercel, we can only save in memory
-  console.log('Config saved in memory only (use environment variables for persistent config)');
 }
 
 export async function validateConfig(webhookUrl: string, departmentName: string): Promise<boolean> {

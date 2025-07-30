@@ -10,9 +10,6 @@ export class BitrixClient {
   async call<T = any>(method: string, params: any = {}): Promise<T> {
     const url = `${this.baseUrl}${method}.json`;
     
-    console.log(`🌐 API call: ${method}`);
-    const startTime = Date.now();
-    
     // Создаем AbortController для таймаута
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 секунд таймаут
@@ -26,9 +23,6 @@ export class BitrixClient {
       });
 
       clearTimeout(timeoutId);
-      
-      const responseTime = Date.now() - startTime;
-      console.log(`   ⏱️ Ответ получен за ${responseTime}мс`);
 
       if (!response.ok) {
         throw new Error(`Bitrix API error: ${response.statusText}`);
@@ -45,11 +39,10 @@ export class BitrixClient {
       clearTimeout(timeoutId);
       
       if (error instanceof Error && error.name === 'AbortError') {
-        console.error(`   ❌ Таймаут запроса ${method} после 30 секунд`);
         throw new Error(`Запрос ${method} превысил таймаут в 30 секунд`);
       }
       
-      console.error(`   ❌ Ошибка при вызове ${method}:`, error);
+      console.error(`❌ Ошибка при вызове ${method}:`, error);
       throw error;
     }
   }
@@ -65,8 +58,6 @@ export class BitrixClient {
     let hasMore = true;
     let start = 0;
     const batchSize = 50;
-    
-    console.log(`🔄 getAll начало для метода: ${method}`);
     
     // Используем простую пагинацию с start = -1 для ускорения
     while (hasMore) {
@@ -88,7 +79,6 @@ export class BitrixClient {
       }
       
       allResults.push(...items);
-      console.log(`   📦 Получено ${items.length} элементов, всего: ${allResults.length}`);
       
       // Проверяем, есть ли еще данные
       hasMore = items.length === batchSize;
@@ -101,7 +91,6 @@ export class BitrixClient {
       }
     }
     
-    console.log(`✅ getAll завершено, всего элементов: ${allResults.length}`);
     return allResults;
   }
 
@@ -112,13 +101,8 @@ export class BitrixClient {
     let iteration = 0;
     const maxIterations = 100; // Защита от бесконечного цикла
     
-    console.log('🔍 getAllTasks начало, фильтр:', JSON.stringify(filter));
-    
     while (hasMore && iteration < maxIterations) {
       iteration++;
-      console.log(`   📄 Итерация ${iteration}, lastId: ${lastId}`);
-      
-      const iterationStart = Date.now();
       
       // Используем стратегию "ID filter" с start = -1 для отключения подсчета общего количества
       const params: any = {
@@ -139,36 +123,25 @@ export class BitrixClient {
       const tasks = await this.call<any>('tasks.task.list', params);
 
       const tasksList = tasks.tasks || [];
-      console.log(`   ✅ Получено ${tasksList.length} задач за ${Date.now() - iterationStart}мс`);
       
       if (tasksList.length === 0) {
         hasMore = false;
-        console.log('   🏁 Больше задач нет');
       } else {
-        // Добавим отладку структуры первой задачи
-        if (iteration === 1 && tasksList.length > 0) {
-          console.log('   🔍 Структура первой задачи:', Object.keys(tasksList[0]));
-        }
-        
         allTasks.push(...tasksList);
         // Попробуем разные варианты поля ID
         const lastTask = tasksList[tasksList.length - 1];
         const taskId = lastTask.ID || lastTask.id || lastTask.Id;
         
         if (!taskId) {
-          console.error('   ❌ Не удалось получить ID из задачи:', lastTask);
+          console.error('❌ Не удалось получить ID из задачи:', lastTask);
           hasMore = false;
           break;
         }
         
         // Преобразуем ID в число
         lastId = parseInt(taskId, 10);
-        console.log(`   📊 Всего загружено: ${allTasks.length}, новый lastId: ${lastId}`);
         
         hasMore = tasksList.length === 50;
-        if (!hasMore) {
-          console.log('   🏁 Получено меньше 50 задач, завершаем');
-        }
       }
     }
     
@@ -176,7 +149,6 @@ export class BitrixClient {
       console.warn(`⚠️ Достигнут лимит итераций (${maxIterations}), возможно есть проблема`);
     }
     
-    console.log(`✅ getAllTasks завершено, всего задач: ${allTasks.length}`);
     return allTasks;
   }
 }

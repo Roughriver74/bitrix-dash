@@ -11,53 +11,40 @@ const CACHE_TTL = 900; // 15 minutes
 export async function GET(request: NextRequest) {
   const encoder = new TextEncoder();
   
-  console.log('🚀 SSE Stream начат:', new Date().toISOString());
-  
   const stream = new ReadableStream({
     async start(controller) {
       const startTime = Date.now();
-      console.log('📡 SSE controller.start вызван');
       
       try {
         // Send initial progress
-        console.log('📤 Отправка начального сообщения...');
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
           type: 'progress', 
           message: 'Начало загрузки данных...',
           progress: 0 
         })}\n\n`));
-        console.log('✅ Начальное сообщение отправлено');
 
         const { searchParams } = new URL(request.url);
         const forceRefresh = searchParams.get('refresh') === 'true';
 
         // Check cache
-        console.log('🔍 Проверка кэша, forceRefresh:', forceRefresh);
         if (!forceRefresh) {
           const cached = await cache.get('dashboard:tasks');
           if (cached) {
-            console.log('✅ Данные найдены в кэше, отправляем...');
             controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
               type: 'complete', 
               data: cached 
             })}\n\n`));
             controller.close();
-            console.log('🔒 Stream закрыт (кэш)');
             return;
           }
-          console.log('❌ Кэш пуст, продолжаем загрузку...');
         }
 
-        console.log('🔧 Получение конфигурации...');
         const webhookUrl = await getConfiguredWebhookUrl();
         const departmentName = await getConfiguredDepartmentName();
-        console.log('✅ Конфигурация получена:', { webhookUrl: webhookUrl ? '✓' : '✗', departmentName });
 
-        console.log('🔌 Создание клиентов...');
         const client = new BitrixClient(webhookUrl);
         const deptService = new DepartmentService(client);
         const taskService = new TaskService(client);
-        console.log('✅ Клиенты созданы');
         
         // Get department
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
@@ -147,27 +134,20 @@ export async function GET(request: NextRequest) {
           timestamp: new Date().toISOString()
         };
 
-        console.log('💾 Сохранение в кэш...');
         // Save to cache
         await cache.setex('dashboard:tasks', CACHE_TTL, result);
 
-        console.log('📤 Отправка финальных данных...');
         const resultJsonString = JSON.stringify(result);
-        console.log(`📊 Размер данных: ${resultJsonString.length} символов`);
         
         // Always use chunked transmission for large payloads to avoid SSE disconnection issues
         const MAX_CHUNK_SIZE = 50000; // Reduced chunk size for better reliability
         
         if (resultJsonString.length > MAX_CHUNK_SIZE) {
-          console.log(`📦 Большой payload (${resultJsonString.length} символов), используем chunked передачу`);
-          
           // Send data in chunks
           const chunks = [];
           for (let i = 0; i < resultJsonString.length; i += MAX_CHUNK_SIZE) {
             chunks.push(resultJsonString.slice(i, i + MAX_CHUNK_SIZE));
           }
-          
-          console.log(`📦 Разделено на ${chunks.length} частей`);
           
           // Send chunk metadata first
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({
@@ -184,7 +164,6 @@ export async function GET(request: NextRequest) {
               data: chunks[i],
               isLast: i === chunks.length - 1
             })}\n\n`));
-            console.log(`📦 Отправлена часть ${i + 1}/${chunks.length} (${chunks[i].length} символов)`);
             
             // Small delay between chunks (10ms) to prevent buffer overflow
             if (i < chunks.length - 1) {
@@ -200,8 +179,6 @@ export async function GET(request: NextRequest) {
             type: 'complete',
             loadTime: Date.now() - startTime
           })}\n\n`));
-          
-          console.log('📦 Chunked передача завершена');
         } else {
           // Send as single message for smaller payloads
           const finalMessage = {
@@ -211,16 +188,11 @@ export async function GET(request: NextRequest) {
           };
           
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(finalMessage)}\n\n`));
-          console.log('📤 Одиночное сообщение отправлено');
         }
         
-        console.log('✅ Финальные данные отправлены');
-        
         controller.close();
-        console.log('🔒 Stream закрыт');
       } catch (error) {
         console.error('❌ SSE Stream ошибка:', error);
-        console.error('📋 Stack trace:', error instanceof Error ? error.stack : 'No stack trace');
         
         try {
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
@@ -233,7 +205,6 @@ export async function GET(request: NextRequest) {
         
         try {
           controller.close();
-          console.log('🔒 Stream закрыт (ошибка)');
         } catch (closeError) {
           console.error('❌ Ошибка закрытия stream:', closeError);
         }
@@ -269,8 +240,6 @@ async function getUsers(userIds: string[], client: BitrixClient): Promise<Bitrix
 }
 
 function generateStats(activeTasks: BitrixTask[], completedTasks: BitrixTask[], users: BitrixUser[], absences: Record<string, UserAbsenceInfo>): TaskStats {
-  console.log(`📊 Начало генерации статистики: ${activeTasks.length} активных, ${completedTasks.length} завершенных задач`);
-  
   const stats: TaskStats = {
     totalActive: activeTasks.length,
     totalCompleted: completedTasks.length,
@@ -311,7 +280,6 @@ function generateStats(activeTasks: BitrixTask[], completedTasks: BitrixTask[], 
     };
   });
 
-  console.log('📊 Обработка активных задач...');
   // Обрабатываем активные задачи одним проходом
   activeTasks.forEach(task => {
     // Общая статистика
@@ -352,7 +320,6 @@ function generateStats(activeTasks: BitrixTask[], completedTasks: BitrixTask[], 
     }
   });
 
-  console.log('📊 Обработка завершенных задач...');
   // Обрабатываем завершенные задачи одним проходом
   completedTasks.forEach(task => {
     const userId = task.RESPONSIBLE_ID;
@@ -361,7 +328,6 @@ function generateStats(activeTasks: BitrixTask[], completedTasks: BitrixTask[], 
     }
   });
 
-  console.log('📊 Формирование статистики по сотрудникам...');
   // Формируем финальную статистику по сотрудникам
   users.forEach(user => {
     const userId = user.ID;
@@ -383,6 +349,5 @@ function generateStats(activeTasks: BitrixTask[], completedTasks: BitrixTask[], 
     };
   });
 
-  console.log('✅ Генерация статистики завершена');
   return stats;
 }

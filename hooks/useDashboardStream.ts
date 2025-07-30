@@ -47,40 +47,29 @@ export function useDashboardStream() {
     } | null = null;
 
     try {
-      console.log('🔌 Начинаем SSE подключение...');
       const response = await fetch(`/api/bitrix/tasks-stream${refresh ? '?refresh=true' : ''}`);
-      console.log('📡 Ответ получен, статус:', response.status, response.statusText);
       
       if (!response.ok) {
-        console.error('❌ HTTP ошибка:', response.status, response.statusText);
         throw new Error('Ошибка загрузки данных');
       }
 
-      console.log('📖 Получаем reader для body...');
       const reader = response.body?.getReader();
       const decoder = new TextDecoder();
 
       if (!reader) {
-        console.error('❌ Reader недоступен');
         throw new Error('Не удалось получить поток данных');
       }
-      
-      console.log('✅ Reader готов, начинаем чтение...');
 
       let buffer = ''; // Буфер для накопления неполных SSE сообщений
       
       while (true) {
-        console.log('🔄 Читаем chunk...');
         const { done, value } = await reader.read();
-        console.log('📦 Chunk получен:', { done, valueLength: value?.length });
         
         if (done) {
-          console.log('✅ Чтение завершено');
           break;
         }
 
         const chunk = decoder.decode(value);
-        console.log('📝 Decoded chunk длина:', chunk.length);
         
         // Добавляем к буферу
         buffer += chunk;
@@ -91,17 +80,12 @@ export function useDashboardStream() {
           const completeMessage = buffer.slice(0, messageEndIndex);
           buffer = buffer.slice(messageEndIndex + 2);
           
-          console.log('📋 Полное SSE сообщение найдено:', completeMessage.length, 'символов');
-          
           const lines = completeMessage.split('\n');
           for (const line of lines) {
             if (line.trim() && line.startsWith('data: ')) {
               try {
                 const jsonData = line.slice(6);
-                console.log('📨 Получено SSE сообщение:', jsonData.substring(0, 200) + '...');
-                
                 const json: StreamResponse = JSON.parse(jsonData);
-                console.log('📋 Тип сообщения:', json.type);
               
               switch (json.type) {
                 case 'progress':
@@ -109,11 +93,9 @@ export function useDashboardStream() {
                     message: json.message || '',
                     progress: json.progress || 0
                   });
-                  console.log(`📊 Прогресс: ${json.progress}% - ${json.message}`);
                   break;
                 
                 case 'chunked_start':
-                  console.log(`📦 Начало chunked передачи: ${json.totalChunks} частей, ${json.totalSize} символов`);
                   currentChunkedData = {
                     chunks: new Array(json.totalChunks || 0).fill(''),
                     totalChunks: json.totalChunks || 0,
@@ -124,7 +106,6 @@ export function useDashboardStream() {
                     message: 'Получение данных по частям...',
                     progress: 95
                   });
-                  console.log('🏁 Chunked data state инициализирован:', currentChunkedData);
                   break;
                 
                 case 'chunk':
@@ -132,8 +113,6 @@ export function useDashboardStream() {
                     const newChunks: string[] = [...currentChunkedData.chunks];
                     newChunks[json.index] = json.data;
                     const newReceivedChunks: number = currentChunkedData.receivedChunks + 1;
-                    
-                    console.log(`📦 Получена часть ${json.index + 1}/${currentChunkedData.totalChunks} (${json.data.length} символов)`);
                     
                     currentChunkedData = {
                       chunks: newChunks,
@@ -149,80 +128,55 @@ export function useDashboardStream() {
                       progress: Math.round(chunkProgress)
                     });
                     
-                    console.log(`🔢 Прогресс chunks: ${newReceivedChunks}/${currentChunkedData.totalChunks}`);
-                    
                     // Check if all chunks received
                     if (newReceivedChunks === currentChunkedData.totalChunks) {
-                      console.log('📦 Все части получены, собираем данные...');
                       try {
                         const fullJsonString = newChunks.join('');
-                        console.log(`🔍 Собранная строка длиной: ${fullJsonString.length} символов`);
                         const reconstructedData = JSON.parse(fullJsonString);
-                        console.log('✅ Данные успешно собраны из частей, устанавливаем данные...');
                         setData(reconstructedData);
                         setLoading(false);
-                        console.log('🎯 Загрузка завершена через chunked transmission');
                       } catch (parseError) {
                         console.error('❌ Ошибка сборки данных из частей:', parseError);
-                        console.error('🔍 Размеры chunks:', newChunks.map(c => c.length));
                         setError('Ошибка сборки данных');
                         setLoading(false);
                       }
                     }
                   } else {
                     console.error('❌ Неверный формат chunk сообщения:', json);
-                    console.error('📊 currentChunkedData:', currentChunkedData);
                   }
                   break;
                 
                 case 'complete':
-                  console.log('🎉 Получено сообщение complete!');
-                  console.log('📦 Данные доступны:', !!json.data);
-                  console.log('⏱️ Время загрузки:', json.loadTime, 'мс');
-                  console.log('📊 Chunked data state:', currentChunkedData);
-                  
                   if (json.data && typeof json.data === 'object') {
                     // Direct data (non-chunked)
-                    console.log('📤 Получены прямые данные (не chunked)');
                     setData(json.data as DashboardData);
                     setLoading(false);
-                    console.log(`✅ Данные успешно установлены (прямая передача)`);
                   } else if (currentChunkedData) {
                     // Chunked data completion
-                    console.log(`🔢 Chunked передача: получено ${currentChunkedData.receivedChunks}/${currentChunkedData.totalChunks} частей`);
                     if (currentChunkedData.receivedChunks === currentChunkedData.totalChunks) {
-                      console.log('✅ Все chunked данные уже обработаны');
                       setLoading(false);
                     } else {
-                      console.error(`❌ Не все части получены: ${currentChunkedData.receivedChunks}/${currentChunkedData.totalChunks}`);
                       setError(`Получено только ${currentChunkedData.receivedChunks} из ${currentChunkedData.totalChunks} частей данных`);
                       setLoading(false);
                     }
                   } else {
-                    console.error('❌ Данные не получены в complete сообщении и нет chunked данных');
-                    console.error('🔍 json.data тип:', typeof json.data);
-                    console.error('🔍 json.data значение:', json.data);
                     setError('Данные не получены');
                     setLoading(false);
                   }
                   break;
                 
                 case 'error':
-                  console.error('❌ Получена ошибка:', json.error);
                   setError(json.error || 'Неизвестная ошибка');
                   setLoading(false);
                   break;
               }
             } catch (e) {
               console.error('❌ Ошибка парсинга SSE:', e);
-              console.error('📋 Проблемная строка:', line);
             }
           }
         }
       }
       }
-      
-      console.log('🏁 SSE поток завершен');
     } catch (err) {
       console.error('❌ Ошибка в fetchData:', err);
       setError(err instanceof Error ? err.message : 'Ошибка загрузки');

@@ -19,15 +19,6 @@ export default function TvDashboardPage() {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [checkingConfig, setCheckingConfig] = useState(true);
   
-  // Debug logging
-  console.log('🎯 Dashboard state:', { 
-    hasData: !!data, 
-    loading, 
-    error, 
-    progress: progress.progress,
-    message: progress.message,
-    checkingConfig 
-  });
 
 
   const toggleFullscreen = () => {
