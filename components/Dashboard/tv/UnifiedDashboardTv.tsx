@@ -38,13 +38,6 @@ export function UnifiedDashboardTv({ data }: UnifiedDashboardTvProps) {
   const [autoSwitch, setAutoSwitch] = useState(true);
   const [secondsUntilSwitch, setSecondsUntilSwitch] = useState(15);
 
-  // Логируем входные данные для отладки
-  console.log('UnifiedDashboardTv: Входные данные:', {
-    users: data.users.length,
-    tasks: data.tasks.length,
-    completedTasks: data.completedTasks.length,
-    completedTasksExample: data.completedTasks[0]
-  });
 
   // Расчет метрик для сотрудников
   const activeEmployees: (EmployeeMetrics | null)[] = data.users
