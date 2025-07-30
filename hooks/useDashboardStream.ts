@@ -10,7 +10,7 @@ interface StreamResponse {
   type: 'progress' | 'complete' | 'error' | 'chunked_start' | 'chunk';
   message?: string;
   progress?: number;
-  data?: DashboardData;
+  data?: DashboardData | string; // Can be DashboardData for complete or string for chunks
   error?: string;
   loadTime?: number;
   // Chunked transmission fields
@@ -100,7 +100,7 @@ export function useDashboardStream() {
                   break;
                 
                 case 'chunk':
-                  if (currentChunkedData && typeof json.index === 'number' && json.data) {
+                  if (currentChunkedData && typeof json.index === 'number' && json.data && typeof json.data === 'string') {
                     const newChunks: string[] = [...currentChunkedData.chunks];
                     newChunks[json.index] = json.data;
                     const newReceivedChunks = currentChunkedData.receivedChunks + 1;
@@ -142,9 +142,9 @@ export function useDashboardStream() {
                   console.log('📦 Данные доступны:', !!json.data);
                   console.log('⏱️ Время загрузки:', json.loadTime, 'мс');
                   
-                  if (json.data) {
+                  if (json.data && typeof json.data === 'object') {
                     // Direct data (non-chunked)
-                    setData(json.data);
+                    setData(json.data as DashboardData);
                     setLoading(false);
                     console.log(`✅ Данные успешно установлены`);
                   } else if (currentChunkedData && currentChunkedData.receivedChunks === currentChunkedData.totalChunks) {
