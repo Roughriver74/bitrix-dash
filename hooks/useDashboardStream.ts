@@ -48,9 +48,13 @@ export function useDashboardStream() {
         const lines = chunk.split('\n');
 
         for (const line of lines) {
-          if (line.startsWith('data: ')) {
+          if (line.trim() && line.startsWith('data: ')) {
             try {
-              const json: StreamResponse = JSON.parse(line.slice(6));
+              const jsonData = line.slice(6);
+              console.log('📨 Получено SSE сообщение:', jsonData.substring(0, 200) + '...');
+              
+              const json: StreamResponse = JSON.parse(jsonData);
+              console.log('📋 Тип сообщения:', json.type);
               
               switch (json.type) {
                 case 'progress':
@@ -58,21 +62,34 @@ export function useDashboardStream() {
                     message: json.message || '',
                     progress: json.progress || 0
                   });
+                  console.log(`📊 Прогресс: ${json.progress}% - ${json.message}`);
                   break;
                 
                 case 'complete':
-                  setData(json.data || null);
-                  setLoading(false);
-                  console.log(`✅ Данные загружены за ${json.loadTime}мс`);
+                  console.log('🎉 Получено сообщение complete!');
+                  console.log('📦 Данные доступны:', !!json.data);
+                  console.log('⏱️ Время загрузки:', json.loadTime, 'мс');
+                  
+                  if (json.data) {
+                    setData(json.data);
+                    setLoading(false);
+                    console.log(`✅ Данные успешно установлены`);
+                  } else {
+                    console.error('❌ Данные не получены в complete сообщении');
+                    setError('Данные не получены');
+                    setLoading(false);
+                  }
                   break;
                 
                 case 'error':
+                  console.error('❌ Получена ошибка:', json.error);
                   setError(json.error || 'Неизвестная ошибка');
                   setLoading(false);
                   break;
               }
             } catch (e) {
-              console.error('Ошибка парсинга:', e);
+              console.error('❌ Ошибка парсинга SSE:', e);
+              console.error('📋 Проблемная строка:', line);
             }
           }
         }

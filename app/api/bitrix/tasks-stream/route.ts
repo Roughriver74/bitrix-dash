@@ -103,9 +103,30 @@ export async function GET(request: NextRequest) {
         
         const stats = generateStats(activeTasks, completedTasks, users, absences);
 
+        // Оптимизируем размер данных для передачи через SSE
         const result = {
-          tasks: activeTasks,
-          completedTasks,
+          tasks: activeTasks.map(task => ({
+            ID: task.ID,
+            TITLE: task.TITLE,
+            RESPONSIBLE_ID: task.RESPONSIBLE_ID,
+            STATUS: task.STATUS,
+            DEADLINE: task.DEADLINE,
+            CREATED_DATE: task.CREATED_DATE,
+            CHANGED_DATE: task.CHANGED_DATE,
+            priority: task.priority,
+            isOverdue: task.isOverdue,
+            isInProgress: task.isInProgress,
+            inactiveDays: task.inactiveDays,
+            lastActivity: task.lastActivity
+          })),
+          completedTasks: completedTasks.map(task => ({
+            ID: task.ID,
+            TITLE: task.TITLE,
+            RESPONSIBLE_ID: task.RESPONSIBLE_ID,
+            STATUS: task.STATUS,
+            CLOSED_DATE: task.CLOSED_DATE,
+            CREATED_DATE: task.CREATED_DATE
+          })),
           users,
           department,
           stats,
@@ -113,17 +134,25 @@ export async function GET(request: NextRequest) {
           timestamp: new Date().toISOString()
         };
 
+        console.log('💾 Сохранение в кэш...');
         // Save to cache
         await cache.setex('dashboard:tasks', CACHE_TTL, result);
 
+        console.log('📤 Отправка финальных данных...');
+        console.log(`📊 Размер данных: ${JSON.stringify(result).length} символов`);
+        
         // Send final data
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
+        const finalMessage = {
           type: 'complete', 
           data: result,
           loadTime: Date.now() - startTime
-        })}\n\n`));
+        };
+        
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(finalMessage)}\n\n`));
+        console.log('✅ Финальные данные отправлены');
         
         controller.close();
+        console.log('🔒 Stream закрыт');
       } catch (error) {
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
           type: 'error', 
