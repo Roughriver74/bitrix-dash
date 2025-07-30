@@ -5,6 +5,7 @@ import { UnifiedDashboardTv } from '@/components/Dashboard/tv/UnifiedDashboardTv
 import { DashboardData } from '@/lib/bitrix/types';
 import { RefreshCw, Maximize2, Monitor } from 'lucide-react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 
 const VIEWS = [
   { id: 'dashboard', name: 'Рейтинг IT отдела', component: 'dashboard' }
@@ -13,11 +14,13 @@ const VIEWS = [
 const DEFAULT_ROTATION_INTERVAL = 60000; // 60 секунд - только одна страница
 
 export default function TvDashboardPage() {
+  const router = useRouter();
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [checkingConfig, setCheckingConfig] = useState(true);
 
   const fetchData = async (refresh = false) => {
     try {
@@ -54,26 +57,48 @@ export default function TvDashboardPage() {
   };
 
   useEffect(() => {
-    fetchData();
-    
-    // Add tv-mode class to body
-    document.body.classList.add('tv-mode');
-    
-    // Auto-refresh every 2 minutes for TV display
-    const interval = setInterval(() => fetchData(), 2 * 60 * 1000);
-    
-    return () => {
-      clearInterval(interval);
-      document.body.classList.remove('tv-mode');
+    // Check configuration first
+    const checkConfig = async () => {
+      try {
+        const response = await fetch('/api/config');
+        if (response.ok) {
+          const config = await response.json();
+          if (!config.isConfigured) {
+            router.push('/setup');
+            return;
+          }
+        }
+      } catch (error) {
+        console.error('Config check error:', error);
+      } finally {
+        setCheckingConfig(false);
+      }
     };
-  }, []);
 
-  if (loading) {
+    checkConfig().then(() => {
+      fetchData();
+      
+      // Add tv-mode class to body
+      document.body.classList.add('tv-mode');
+      
+      // Auto-refresh every 2 minutes for TV display
+      const interval = setInterval(() => fetchData(), 2 * 60 * 1000);
+      
+      return () => {
+        clearInterval(interval);
+        document.body.classList.remove('tv-mode');
+      };
+    });
+  }, [router]);
+
+  if (checkingConfig || loading) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gray-900">
         <div className="text-center">
           <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-500 mx-auto"></div>
-          <p className="text-2xl mt-4 text-white">Загрузка данных из Битрикс24...</p>
+          <p className="text-2xl mt-4 text-white">
+            {checkingConfig ? 'Проверка конфигурации...' : 'Загрузка данных из Битрикс24...'}
+          </p>
         </div>
       </div>
     );

@@ -8,12 +8,15 @@ import { ActivityHeatmap } from '@/components/Dashboard/ActivityHeatmap';
 import { DashboardData } from '@/lib/bitrix/types';
 import { RefreshCw, Tv } from 'lucide-react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 
 export default function DashboardPage() {
+  const router = useRouter();
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [checkingConfig, setCheckingConfig] = useState(true);
 
   const fetchData = async (refresh = false) => {
     try {
@@ -40,14 +43,34 @@ export default function DashboardPage() {
   };
 
   useEffect(() => {
-    fetchData();
-    
-    // Auto-refresh every 5 minutes
-    const interval = setInterval(() => fetchData(), 5 * 60 * 1000);
-    return () => clearInterval(interval);
-  }, []);
+    // Check configuration first
+    const checkConfig = async () => {
+      try {
+        const response = await fetch('/api/config');
+        if (response.ok) {
+          const config = await response.json();
+          if (!config.isConfigured) {
+            router.push('/setup');
+            return;
+          }
+        }
+      } catch (error) {
+        console.error('Config check error:', error);
+      } finally {
+        setCheckingConfig(false);
+      }
+    };
 
-  if (loading) {
+    checkConfig().then(() => {
+      fetchData();
+      
+      // Auto-refresh every 5 minutes
+      const interval = setInterval(() => fetchData(), 5 * 60 * 1000);
+      return () => clearInterval(interval);
+    });
+  }, [router]);
+
+  if (checkingConfig || loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">

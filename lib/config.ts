@@ -11,10 +11,29 @@ export interface AppConfig {
 
 const CONFIG_PATH = path.join(process.cwd(), 'config.json');
 
+// In-memory config cache for Vercel
+let configCache: AppConfig | null = null;
+
 export async function readConfig(): Promise<AppConfig> {
+  // Check environment variables first (for Vercel)
+  if (process.env.BITRIX_WEBHOOK_URL && process.env.BITRIX_DEPARTMENT_NAME) {
+    return {
+      webhookUrl: process.env.BITRIX_WEBHOOK_URL,
+      departmentName: process.env.BITRIX_DEPARTMENT_NAME,
+      updatedAt: new Date().toISOString()
+    };
+  }
+
+  // Check cache
+  if (configCache) {
+    return configCache;
+  }
+
+  // Try to read from file (for local development)
   try {
     const data = await fs.readFile(CONFIG_PATH, 'utf-8');
-    return JSON.parse(data);
+    configCache = JSON.parse(data);
+    return configCache;
   } catch (error) {
     // Return empty config if file doesn't exist
     return {
@@ -25,7 +44,16 @@ export async function readConfig(): Promise<AppConfig> {
 }
 
 export async function writeConfig(config: AppConfig): Promise<void> {
-  await fs.writeFile(CONFIG_PATH, JSON.stringify(config, null, 2));
+  // Update cache
+  configCache = config;
+  
+  // Try to write to file (will fail on Vercel, but that's ok)
+  try {
+    await fs.writeFile(CONFIG_PATH, JSON.stringify(config, null, 2));
+  } catch (error) {
+    // Ignore file write errors on Vercel
+    console.log('Config saved in memory only (file system not available)');
+  }
 }
 
 export async function validateConfig(webhookUrl: string, departmentName: string): Promise<boolean> {

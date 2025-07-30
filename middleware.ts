@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { readConfig } from './lib/config';
 
 export async function middleware(request: NextRequest) {
   // Skip middleware for setup page, API routes, and static files
@@ -13,20 +12,8 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  try {
-    // Check if configuration exists
-    const config = await readConfig();
-    
-    if (!config.webhookUrl || !config.departmentName) {
-      // Redirect to setup page if not configured
-      return NextResponse.redirect(new URL('/setup', request.url));
-    }
-  } catch (error) {
-    console.error('Middleware error:', error);
-    // In case of error, redirect to setup
-    return NextResponse.redirect(new URL('/setup', request.url));
-  }
-
+  // For Vercel deployment, we'll check configuration on the client side
+  // Middleware can't read files in Vercel environment
   return NextResponse.next();
 }
 
