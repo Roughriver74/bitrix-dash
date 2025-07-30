@@ -32,8 +32,9 @@ export async function readConfig(): Promise<AppConfig> {
   // Try to read from file (for local development)
   try {
     const data = await fs.readFile(CONFIG_PATH, 'utf-8');
-    configCache = JSON.parse(data);
-    return configCache;
+    const parsedConfig = JSON.parse(data);
+    configCache = parsedConfig;
+    return parsedConfig;
   } catch (error) {
     // Return empty config if file doesn't exist
     return {
