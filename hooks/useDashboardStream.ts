@@ -101,7 +101,7 @@ export function useDashboardStream() {
                 
                 case 'chunk':
                   if (currentChunkedData && typeof json.index === 'number' && json.data) {
-                    const newChunks = [...currentChunkedData.chunks];
+                    const newChunks: string[] = [...currentChunkedData.chunks];
                     newChunks[json.index] = json.data;
                     const newReceivedChunks = currentChunkedData.receivedChunks + 1;
                     
