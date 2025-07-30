@@ -1,0 +1,19 @@
+{
+  "functions": {
+    "app/api/bitrix/tasks/route.ts": {
+      "maxDuration": 300
+    },
+    "app/api/bitrix/tasks-stream/route.ts": {
+      "maxDuration": 300
+    },
+    "app/api/config/route.ts": {
+      "maxDuration": 60
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "/api/$1"
+    }
+  ]
+}

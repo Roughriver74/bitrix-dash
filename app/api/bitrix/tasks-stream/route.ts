@@ -6,7 +6,7 @@ import { cache } from '@/lib/cache';
 import { BitrixTask, BitrixUser, TaskStats, UserAbsenceInfo } from '@/lib/bitrix/types';
 import { getConfiguredWebhookUrl, getConfiguredDepartmentName } from '@/lib/config';
 
-const CACHE_TTL = 300; // 5 minutes
+const CACHE_TTL = 900; // 15 minutes
 
 export async function GET(request: NextRequest) {
   const encoder = new TextEncoder();
@@ -67,29 +67,26 @@ export async function GET(request: NextRequest) {
         
         const userIds = await deptService.getAllDepartmentUsers(department.ID, true);
 
-        // Get active tasks
+        // Get all tasks (active and completed) in one request
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
           type: 'progress', 
-          message: 'Загрузка активных задач...',
+          message: 'Загрузка всех задач...',
           progress: 30 
         })}\n\n`));
         
-        const activeTasks = await taskService.getAllDepartmentTasks(userIds);
-
-        // Get completed tasks
+        const { activeTasks, completedTasks } = await taskService.getAllTasks(userIds);
+        
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
           type: 'progress', 
-          message: 'Загрузка завершенных задач...',
-          progress: 50 
+          message: 'Задачи загружены и разделены...',
+          progress: 60 
         })}\n\n`));
-        
-        const completedTasks = await taskService.getCompletedTasks(userIds, 30);
 
         // Get users info
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
           type: 'progress', 
           message: 'Получение информации о пользователях...',
-          progress: 70 
+          progress: 75 
         })}\n\n`));
         
         const users = await getUsers(userIds, client);
@@ -98,7 +95,7 @@ export async function GET(request: NextRequest) {
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
           type: 'progress', 
           message: 'Проверка отсутствий сотрудников...',
-          progress: 85 
+          progress: 90 
         })}\n\n`));
         
         const absences = await taskService.getAbsenceEvents(userIds);

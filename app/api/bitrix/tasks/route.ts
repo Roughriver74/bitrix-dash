@@ -6,7 +6,7 @@ import { cache } from '@/lib/cache';
 import { BitrixTask, BitrixUser, TaskStats, UserAbsenceInfo } from '@/lib/bitrix/types';
 import { getConfiguredWebhookUrl, getConfiguredDepartmentName } from '@/lib/config';
 
-const CACHE_TTL = 300; // 5 minutes
+const CACHE_TTL = 900; // 15 minutes
 
 export async function GET(request: Request) {
   const startTime = Date.now();
@@ -47,21 +47,11 @@ export async function GET(request: Request) {
     const userIds = await deptService.getAllDepartmentUsers(department.ID, true);
     console.log(`✅ Найдено ${userIds.length} пользователей`);
 
-    // Get all active tasks
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-
-    // Active tasks
-    console.log('📋 Получение активных задач...');
-    const activeTasksStart = Date.now();
-    const activeTasks = await taskService.getAllDepartmentTasks(userIds);
-    console.log(`✅ Получено ${activeTasks.length} активных задач за ${Date.now() - activeTasksStart}мс`);
-
-    // Completed tasks for last 30 days
-    console.log('✔️ Получение завершенных задач за последние 30 дней...');
-    const completedTasksStart = Date.now();
-    const completedTasks = await taskService.getCompletedTasks(userIds, 30);
-    console.log(`✅ Получено ${completedTasks.length} завершенных задач за ${Date.now() - completedTasksStart}мс`);
+    // Get all tasks (active and completed) in one optimized request
+    console.log('📋 Получение всех задач (активных и завершенных)...');
+    const tasksStart = Date.now();
+    const { activeTasks, completedTasks } = await taskService.getAllTasks(userIds);
+    console.log(`✅ Получено ${activeTasks.length} активных и ${completedTasks.length} завершенных задач за ${Date.now() - tasksStart}мс`);
 
     // Get user information
     console.log('👤 Получение информации о пользователях...');
