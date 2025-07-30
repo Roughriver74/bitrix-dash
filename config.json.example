@@ -1,0 +1,5 @@
+{
+  "webhookUrl": "https://your-domain.bitrix24.ru/rest/YOUR_ID/YOUR_TOKEN/",
+  "departmentName": "IT отдел",
+  "updatedAt": "2024-01-01T00:00:00.000Z"
+}
