@@ -152,13 +152,8 @@ export class TaskService {
     const enrichedTasks: BitrixTask[] = [];
     const now = new Date();
     
-    // Подсчитаем статистику по статусам
-    const statusCounts: Record<string, number> = {};
-    tasks.forEach(task => {
-      const status = (task as any).STATUS || (task as any).status || 'unknown';
-      statusCounts[status] = (statusCounts[status] || 0) + 1;
-    });
-    console.log('📊 Распределение задач по статусам:', statusCounts);
+    // Подсчитаем статистику по статусам (только общее количество для производительности)
+    console.log(`📊 Обогащение ${tasks.length} задач...`);
     
     // Быстрое обогащение без истории - используем только CHANGED_DATE
     for (const task of tasks) {
@@ -204,7 +199,10 @@ export class TaskService {
         executionTime = Math.floor(
           (now.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)
         );
-        console.log(`   🔷 Задача в работе: ${mappedTask.TITLE} (ID: ${mappedTask.ID}, STATUS: ${mappedTask.STATUS}, время выполнения: ${executionTime} дней)`);
+        // Логируем только первые 3 задачи в работе для отладки
+        if (enrichedTasks.filter(t => t.isInProgress).length < 3) {
+          console.log(`   🔷 Задача в работе: ${mappedTask.TITLE?.substring(0, 50)}... (ID: ${mappedTask.ID}, время: ${executionTime} дней)`);
+        }
       }
       
       enrichedTasks.push({
@@ -387,17 +385,12 @@ export class TaskService {
             const userId = key.replace('user_', '');
             
             if (result && Array.isArray(result)) {
-              console.log(`   👤 Пользователь ${userId}: всего событий ${result.length}`);
-              
-              // Выводим все события для отладки
+              // Логируем только если есть события
               if (result.length > 0) {
-                console.log(`   Примеры событий:`, result.slice(0, 2).map(e => ({
-                  NAME: e.NAME,
-                  ACCESSIBILITY: e.ACCESSIBILITY,
-                  DATE_FROM: e.DATE_FROM,
-                  DATE_TO: e.DATE_TO
-                })));
+                console.log(`   👤 Пользователь ${userId}: ${result.length} событий`);
               }
+              
+              // Детальное логирование только при необходимости (убрано для производительности)
               
               // Фильтруем только события с типом "absent"
               const allAbsenceEvents = result.filter((event: any) => {
@@ -411,16 +404,12 @@ export class TaskService {
                                    event.NAME.toLowerCase().includes('отсутств')
                                  ));
                 
-                if (isAbsent) {
-                  console.log(`      ✅ Событие отсутствия: ${event.NAME} (ACCESSIBILITY: ${event.ACCESSIBILITY})`);
-                }
+                // Убрано детальное логирование для производительности
                 
                 return isAbsent;
               });
               
-              if (allAbsenceEvents.length > 0) {
-                console.log(`   📅 Найдено ${allAbsenceEvents.length} событий отсутствия для пользователя ${userId}`);
-              }
+              // Логируем только значимые отсутствия
               
               // Ищем текущие отсутствия
               const currentAbsences = allAbsenceEvents.filter((event: any) => {
@@ -449,7 +438,7 @@ export class TaskService {
                   eventName: currentAbsence.NAME
                 };
                 
-                console.log(`   👤 Пользователь ${userId} отсутствует: ${currentAbsence.NAME}`);
+                console.log(`   👤 Пользователь ${userId} отсутствует`);
               }
               
               // Добавляем информацию о ближайшем будущем отсутствии
@@ -467,7 +456,7 @@ export class TaskService {
                   daysUntil
                 };
                 
-                console.log(`   📅 Пользователь ${userId} будет отсутствовать через ${daysUntil} дней: ${nextAbsence.NAME}`);
+                // Убрано детальное логирование будущих отсутствий
               }
             }
           }
