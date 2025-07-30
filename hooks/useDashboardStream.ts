@@ -7,12 +7,17 @@ interface StreamProgress {
 }
 
 interface StreamResponse {
-  type: 'progress' | 'complete' | 'error';
+  type: 'progress' | 'complete' | 'error' | 'chunked_start' | 'chunk';
   message?: string;
   progress?: number;
   data?: DashboardData;
   error?: string;
   loadTime?: number;
+  // Chunked transmission fields
+  totalChunks?: number;
+  totalSize?: number;
+  index?: number;
+  isLast?: boolean;
 }
 
 export function useDashboardStream() {
@@ -20,11 +25,26 @@ export function useDashboardStream() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<StreamProgress>({ message: '', progress: 0 });
+  
+  // Chunked data reconstruction state
+  const [chunkedData, setChunkedData] = useState<{
+    chunks: string[];
+    totalChunks: number;
+    receivedChunks: number;
+  } | null>(null);
 
   const fetchData = useCallback(async (refresh = false) => {
     setLoading(true);
     setError(null);
     setProgress({ message: 'Подключение...', progress: 0 });
+    setChunkedData(null); // Reset chunked data state
+
+    // Local variable to track chunked data during this fetch session
+    let currentChunkedData: {
+      chunks: string[];
+      totalChunks: number;
+      receivedChunks: number;
+    } | null = null;
 
     try {
       const response = await fetch(`/api/bitrix/tasks-stream${refresh ? '?refresh=true' : ''}`);
@@ -65,15 +85,72 @@ export function useDashboardStream() {
                   console.log(`📊 Прогресс: ${json.progress}% - ${json.message}`);
                   break;
                 
+                case 'chunked_start':
+                  console.log(`📦 Начало chunked передачи: ${json.totalChunks} частей, ${json.totalSize} символов`);
+                  currentChunkedData = {
+                    chunks: new Array(json.totalChunks || 0).fill(''),
+                    totalChunks: json.totalChunks || 0,
+                    receivedChunks: 0
+                  };
+                  setChunkedData(currentChunkedData);
+                  setProgress({
+                    message: 'Получение данных по частям...',
+                    progress: 95
+                  });
+                  break;
+                
+                case 'chunk':
+                  if (currentChunkedData && typeof json.index === 'number' && json.data) {
+                    const newChunks = [...currentChunkedData.chunks];
+                    newChunks[json.index] = json.data;
+                    const newReceivedChunks = currentChunkedData.receivedChunks + 1;
+                    
+                    console.log(`📦 Получена часть ${json.index + 1}/${currentChunkedData.totalChunks} (${json.data.length} символов)`);
+                    
+                    currentChunkedData = {
+                      chunks: newChunks,
+                      totalChunks: currentChunkedData.totalChunks,
+                      receivedChunks: newReceivedChunks
+                    };
+                    setChunkedData(currentChunkedData);
+                    
+                    // Update progress for chunked reception
+                    const chunkProgress = 95 + (newReceivedChunks / currentChunkedData.totalChunks) * 5;
+                    setProgress({
+                      message: `Получено ${newReceivedChunks}/${currentChunkedData.totalChunks} частей...`,
+                      progress: Math.round(chunkProgress)
+                    });
+                    
+                    // Check if all chunks received
+                    if (newReceivedChunks === currentChunkedData.totalChunks) {
+                      console.log('📦 Все части получены, собираем данные...');
+                      try {
+                        const fullJsonString = newChunks.join('');
+                        const reconstructedData = JSON.parse(fullJsonString);
+                        console.log('✅ Данные успешно собраны из частей');
+                        setData(reconstructedData);
+                      } catch (parseError) {
+                        console.error('❌ Ошибка сборки данных из частей:', parseError);
+                        setError('Ошибка сборки данных');
+                      }
+                    }
+                  }
+                  break;
+                
                 case 'complete':
                   console.log('🎉 Получено сообщение complete!');
                   console.log('📦 Данные доступны:', !!json.data);
                   console.log('⏱️ Время загрузки:', json.loadTime, 'мс');
                   
                   if (json.data) {
+                    // Direct data (non-chunked)
                     setData(json.data);
                     setLoading(false);
                     console.log(`✅ Данные успешно установлены`);
+                  } else if (currentChunkedData && currentChunkedData.receivedChunks === currentChunkedData.totalChunks) {
+                    // Chunked data completion
+                    setLoading(false);
+                    console.log(`✅ Chunked передача завершена`);
                   } else {
                     console.error('❌ Данные не получены в complete сообщении');
                     setError('Данные не получены');

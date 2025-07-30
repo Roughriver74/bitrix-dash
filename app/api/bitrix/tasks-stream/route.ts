@@ -139,16 +139,57 @@ export async function GET(request: NextRequest) {
         await cache.setex('dashboard:tasks', CACHE_TTL, result);
 
         console.log('📤 Отправка финальных данных...');
-        console.log(`📊 Размер данных: ${JSON.stringify(result).length} символов`);
+        const resultJsonString = JSON.stringify(result);
+        console.log(`📊 Размер данных: ${resultJsonString.length} символов`);
         
-        // Send final data
-        const finalMessage = {
-          type: 'complete', 
-          data: result,
-          loadTime: Date.now() - startTime
-        };
+        // Check if payload is too large for single SSE message (limit to ~100KB chunks)
+        const MAX_CHUNK_SIZE = 100000;
         
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify(finalMessage)}\n\n`));
+        if (resultJsonString.length > MAX_CHUNK_SIZE) {
+          console.log(`📦 Большой payload (${resultJsonString.length} символов), используем chunked передачу`);
+          
+          // Send data in chunks
+          const chunks = [];
+          for (let i = 0; i < resultJsonString.length; i += MAX_CHUNK_SIZE) {
+            chunks.push(resultJsonString.slice(i, i + MAX_CHUNK_SIZE));
+          }
+          
+          console.log(`📦 Разделено на ${chunks.length} частей`);
+          
+          // Send chunk metadata first
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({
+            type: 'chunked_start',
+            totalChunks: chunks.length,
+            totalSize: resultJsonString.length
+          })}\n\n`));
+          
+          // Send each chunk
+          for (let i = 0; i < chunks.length; i++) {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({
+              type: 'chunk',
+              index: i,
+              data: chunks[i],
+              isLast: i === chunks.length - 1
+            })}\n\n`));
+            console.log(`📦 Отправлена часть ${i + 1}/${chunks.length} (${chunks[i].length} символов)`);
+          }
+          
+          // Send completion message
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({
+            type: 'complete',
+            loadTime: Date.now() - startTime
+          })}\n\n`));
+        } else {
+          // Send as single message for smaller payloads
+          const finalMessage = {
+            type: 'complete', 
+            data: result,
+            loadTime: Date.now() - startTime
+          };
+          
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(finalMessage)}\n\n`));
+        }
+        
         console.log('✅ Финальные данные отправлены');
         
         controller.close();
