@@ -67,11 +67,9 @@ export async function GET(request: Request) {
       });
     }
 
-    // Get absence information
-    console.log('📅 Получение информации об отсутствиях...');
-    const absenceStart = Date.now();
-    const absences = await taskService.getAbsenceEvents(userIds);
-    console.log(`✅ Получена информация об отсутствиях за ${Date.now() - absenceStart}мс`);
+    // Skip absence information for now (API methods not available)
+    console.log('📅 Пропускаем получение отсутствий (API недоступен)');
+    const absences: Record<string, any> = {};
 
     // Generate statistics
     console.log('📊 Генерация статистики...');

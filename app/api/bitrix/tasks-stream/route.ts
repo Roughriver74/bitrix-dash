@@ -91,20 +91,14 @@ export async function GET(request: NextRequest) {
         
         const users = await getUsers(userIds, client);
 
-        // Get absences
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
-          type: 'progress', 
-          message: 'Проверка отсутствий сотрудников...',
-          progress: 90 
-        })}\n\n`));
-        
-        const absences = await taskService.getAbsenceEvents(userIds);
+        // Skip absences for now (API methods not available)
+        const absences: Record<string, any> = {};
 
         // Generate stats
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
           type: 'progress', 
           message: 'Генерация статистики...',
-          progress: 95 
+          progress: 90 
         })}\n\n`));
         
         const stats = generateStats(activeTasks, completedTasks, users, absences);
