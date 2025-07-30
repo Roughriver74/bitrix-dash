@@ -127,13 +127,15 @@ async function getUsers(userIds: string[], client: BitrixClient): Promise<Bitrix
 }
 
 function generateStats(activeTasks: BitrixTask[], completedTasks: BitrixTask[], users: BitrixUser[], absences: Record<string, UserAbsenceInfo>): TaskStats {
+  console.log(`📊 Начало генерации статистики: ${activeTasks.length} активных, ${completedTasks.length} завершенных задач`);
+  
   const stats: TaskStats = {
     totalActive: activeTasks.length,
     totalCompleted: completedTasks.length,
-    criticalTasks: activeTasks.filter(t => t.priority === 'critical').length,
-    warningTasks: activeTasks.filter(t => t.priority === 'warning').length,
-    overdueTasks: activeTasks.filter(t => t.isOverdue).length,
-    inProgressTasks: activeTasks.filter(t => t.isInProgress).length,
+    criticalTasks: 0,
+    warningTasks: 0,
+    overdueTasks: 0,
+    inProgressTasks: 0,
     byEmployee: {},
     byStatus: {},
     inactivityDistribution: {
@@ -144,50 +146,101 @@ function generateStats(activeTasks: BitrixTask[], completedTasks: BitrixTask[], 
     }
   };
 
-  // Employee statistics
+  // Инициализируем статистику по сотрудникам
+  const userTaskCounts: Record<string, {
+    active: BitrixTask[],
+    completed: BitrixTask[],
+    critical: number,
+    warning: number,
+    overdue: number,
+    inProgress: number,
+    inactiveDaysSum: number
+  }> = {};
+
   users.forEach(user => {
-    const userId = user.ID;
-    const active = activeTasks.filter(t => t.RESPONSIBLE_ID === userId);
-    const completed = completedTasks.filter(t => t.RESPONSIBLE_ID === userId);
-    const absenceInfo = absences[userId];
-    
-    stats.byEmployee[userId] = {
-      name: `${user.NAME} ${user.LAST_NAME}`,
-      active: active.length,
-      completed: completed.length,
-      critical: active.filter(t => t.priority === 'critical').length,
-      warning: active.filter(t => t.priority === 'warning').length,
-      overdue: active.filter(t => t.isOverdue).length,
-      inProgress: active.filter(t => t.isInProgress).length,
-      avgInactiveDays: active.length > 0 
-        ? Math.round(active.reduce((sum, t) => sum + (t.inactiveDays || 0), 0) / active.length)
-        : 0,
-      isAbsent: absenceInfo?.isAbsent || false
+    userTaskCounts[user.ID] = {
+      active: [],
+      completed: [],
+      critical: 0,
+      warning: 0,
+      overdue: 0,
+      inProgress: 0,
+      inactiveDaysSum: 0
     };
   });
 
-  // Status statistics
-  const statusMap: Record<string, string> = {
-    '1': 'Новая',
-    '2': 'Ждет выполнения',
-    '3': 'Выполняется',
-    '4': 'Ждет контроля',
-    '5': 'Завершена',
-    '6': 'Отложена',
-    '7': 'Отклонена'
-  };
-
+  console.log('📊 Обработка активных задач...');
+  // Обрабатываем активные задачи одним проходом
   activeTasks.forEach(task => {
+    // Общая статистика
+    if (task.priority === 'critical') stats.criticalTasks++;
+    if (task.priority === 'warning') stats.warningTasks++;
+    if (task.isOverdue) stats.overdueTasks++;
+    if (task.isInProgress) stats.inProgressTasks++;
+
+    // Статистика по статусам
+    const statusMap: Record<string, string> = {
+      '1': 'Новая',
+      '2': 'Ждет выполнения',
+      '3': 'Выполняется',
+      '4': 'Ждет контроля',
+      '5': 'Завершена',
+      '6': 'Отложена',
+      '7': 'Отклонена'
+    };
     const statusName = statusMap[task.STATUS] || 'Неизвестно';
     stats.byStatus[statusName] = (stats.byStatus[statusName] || 0) + 1;
 
-    // Inactivity distribution
+    // Распределение по неактивности
     const days = task.inactiveDays || 0;
     if (days <= 1) stats.inactivityDistribution['0-1 день']++;
     else if (days <= 3) stats.inactivityDistribution['2-3 дня']++;
     else if (days <= 7) stats.inactivityDistribution['4-7 дней']++;
     else stats.inactivityDistribution['Более недели']++;
+
+    // Статистика по сотрудникам
+    const userId = task.RESPONSIBLE_ID;
+    if (userTaskCounts[userId]) {
+      userTaskCounts[userId].active.push(task);
+      if (task.priority === 'critical') userTaskCounts[userId].critical++;
+      if (task.priority === 'warning') userTaskCounts[userId].warning++;
+      if (task.isOverdue) userTaskCounts[userId].overdue++;
+      if (task.isInProgress) userTaskCounts[userId].inProgress++;
+      userTaskCounts[userId].inactiveDaysSum += (task.inactiveDays || 0);
+    }
   });
 
+  console.log('📊 Обработка завершенных задач...');
+  // Обрабатываем завершенные задачи одним проходом
+  completedTasks.forEach(task => {
+    const userId = task.RESPONSIBLE_ID;
+    if (userTaskCounts[userId]) {
+      userTaskCounts[userId].completed.push(task);
+    }
+  });
+
+  console.log('📊 Формирование статистики по сотрудникам...');
+  // Формируем финальную статистику по сотрудникам
+  users.forEach(user => {
+    const userId = user.ID;
+    const userStats = userTaskCounts[userId];
+    const absenceInfo = absences[userId];
+    
+    stats.byEmployee[userId] = {
+      name: `${user.NAME} ${user.LAST_NAME}`,
+      active: userStats.active.length,
+      completed: userStats.completed.length,
+      critical: userStats.critical,
+      warning: userStats.warning,
+      overdue: userStats.overdue,
+      inProgress: userStats.inProgress,
+      avgInactiveDays: userStats.active.length > 0 
+        ? Math.round(userStats.inactiveDaysSum / userStats.active.length)
+        : 0,
+      isAbsent: absenceInfo?.isAbsent || false
+    };
+  });
+
+  console.log('✅ Генерация статистики завершена');
   return stats;
 }
