@@ -61,13 +61,7 @@ export function UnifiedDashboardTv({ data }: UnifiedDashboardTvProps) {
       
       // Пропускаем сотрудников без задач (активных и завершенных)
       if (activeTasks.length === 0 && completedTasks.length === 0) {
-        console.log(`❌ Пропускаем сотрудника ${userName} - нет задач`);
         return null;
-      }
-      
-      // Логируем информацию о сотруднике
-      if (activeTasks.length > 0 || completedTasks.length > 0) {
-        console.log(`✅ Сотрудник ${userName}: активных=${activeTasks.length}, завершенных=${completedTasks.length}`);
       }
       
       // Расчет средней скорости выполнения за последние 30 дней
@@ -161,6 +155,22 @@ export function UnifiedDashboardTv({ data }: UnifiedDashboardTvProps) {
         Math.floor(efficiency / 10)
       );
       
+      // Детальное логирование для отладки рейтинга Максима Данилина
+      if (userName === 'Максим Данилин') {
+        console.log(`🔍 Детальный расчет рейтинга для ${userName}:`, {
+          completedLast30Days: completedLast30Days.length,
+          overdueTasks,
+          avgInactiveDays: Math.floor(avgInactiveDays),
+          efficiency,
+          'completedLast30Days * 10': completedLast30Days.length * 10,
+          'overdueTasks * 20': overdueTasks * 20,
+          'avgInactiveDays * 2': Math.floor(avgInactiveDays) * 2,
+          'efficiency bonus': Math.floor(efficiency / 10),
+          'итоговый расчет': completedLast30Days.length * 10 - overdueTasks * 20 - Math.floor(avgInactiveDays) * 2 + Math.floor(efficiency / 10),
+          'финальный рейтинг': rating
+        });
+      }
+      
       return {
         id: userId,
         name: userName,
@@ -190,7 +200,6 @@ export function UnifiedDashboardTv({ data }: UnifiedDashboardTvProps) {
     .filter(Boolean)
     .sort((a, b) => b!.rating - a!.rating);
 
-  console.log(`📊 Итого в рейтинге: ${activeEmployees.length} сотрудников из ${data.users.length} всего`);
 
   // Автоматическое переключение: общий вид -> сотрудник 1 -> сотрудник 2 -> ... -> общий вид
   useEffect(() => {
