@@ -147,12 +147,12 @@ export function UnifiedDashboardTv({ data }: UnifiedDashboardTvProps) {
         ? activeTasks.reduce((sum, t) => sum + (t.inactiveDays || 0), 0) / activeTasks.length
         : 0;
       
-      // Формула рейтинга с учетом эффективности
+      // Улучшенная формула рейтинга - более справедливая
       const rating = Math.max(0, 
-        completedLast30Days.length * 10 - 
-        overdueTasks * 20 - 
-        Math.floor(avgInactiveDays) * 2 +
-        Math.floor(efficiency / 10)
+        completedLast30Days.length * 15 +  // Больше баллов за выполненные задачи
+        Math.floor(efficiency / 5) -        // Больше бонуса за эффективность
+        overdueTasks * 5 -                  // Меньший штраф за просроченные
+        Math.floor(avgInactiveDays) * 1     // Меньший штраф за неактивность
       );
       
       // Детальное логирование для отладки рейтинга Максима Данилина
