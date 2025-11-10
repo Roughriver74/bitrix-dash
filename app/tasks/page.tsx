@@ -237,7 +237,7 @@ export default function TasksPage() {
 
 	return (
 		<main className='min-h-screen bg-gray-950 pb-16'>
-			<div className='mx-auto w-full max-w-7xl px-6 py-10'>
+			<div className='w-full px-4 py-6'>
 				<header className='mb-10 flex flex-col gap-4 md:flex-row md:items-center md:justify-between'>
 					<div>
 						<h1 className='text-3xl font-semibold text-white'>
@@ -284,6 +284,38 @@ export default function TasksPage() {
 					onEdit={handleEdit}
 					onComplete={handleComplete}
 					onDelete={handleDelete}
+					onUpdate={async (taskId, updates) => {
+						try {
+							const response = await fetch('/api/tasks', {
+								method: 'PATCH',
+								headers: { 'Content-Type': 'application/json' },
+								body: JSON.stringify({
+									id: taskId,
+									fields: updates.fields,
+									metadata: updates.metadata,
+									otherTags: updates.otherTags,
+								}),
+							})
+
+							if (!response.ok) {
+								throw new Error(await extractError(response))
+							}
+
+							const data = await response.json()
+							if (data.task) {
+								setTasks(prev =>
+									sortByOrder(
+										prev.map(task => (task.id === data.task.id ? data.task : task))
+									)
+								)
+							}
+						} catch (err) {
+							console.error(err)
+							setError(
+								err instanceof Error ? err.message : 'Не удалось обновить задачу'
+							)
+						}
+					}}
 				/>
 			</div>
 

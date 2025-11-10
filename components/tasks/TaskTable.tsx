@@ -19,6 +19,7 @@ import {
 } from '@dnd-kit/sortable'
 import { GripVertical, Check, Edit, Trash2 } from 'lucide-react'
 import clsx from 'clsx'
+import { useState, useRef, useEffect } from 'react'
 import { TaskListItem } from '@/components/tasks/types'
 
 interface TaskTableProps {
@@ -28,6 +29,25 @@ interface TaskTableProps {
 	onEdit: (task: TaskListItem) => void
 	onComplete: (task: TaskListItem) => void
 	onDelete: (task: TaskListItem) => void
+	onUpdate?: (
+		taskId: string,
+		updates: {
+			fields?: {
+				title?: string
+				description?: string
+				responsibleId?: string
+				deadline?: string
+				status?: string
+			}
+			metadata?: {
+				abc?: string | null
+				impact?: string | null
+				system?: string | null
+				weight?: number | null
+			}
+			otherTags?: string[]
+		}
+	) => Promise<void>
 }
 
 export function TaskTable({
@@ -37,6 +57,7 @@ export function TaskTable({
 	onEdit,
 	onComplete,
 	onDelete,
+	onUpdate,
 }: TaskTableProps) {
 	const sensors = useSensors(
 		useSensor(PointerSensor, {
@@ -87,19 +108,19 @@ export function TaskTable({
 						items={tasks.map(task => task.id)}
 						strategy={verticalListSortingStrategy}
 					>
-						<table className='min-w-full table-fixed border-collapse'>
-							<thead className='bg-gray-800/70'>
+						<table className='w-full border-collapse table-auto'>
+							<thead className='bg-gray-800/70 sticky top-0 z-10'>
 								<tr className='text-left text-sm font-medium text-gray-300'>
 									<th className='w-12 px-4 py-3'>#</th>
 									<th className='w-12 px-4 py-3'></th>
-									<th className='w-24 px-4 py-3'>ABC</th>
-									<th className='px-4 py-3'>Задача</th>
-									<th className='w-48 px-4 py-3'>Ответственный</th>
-									<th className='w-36 px-4 py-3'>Статус</th>
+									<th className='w-20 px-4 py-3'>ABC</th>
+									<th className='px-4 py-3 min-w-[300px]'>Задача</th>
+									<th className='w-40 px-4 py-3'>Ответственный</th>
+									<th className='w-32 px-4 py-3'>Статус</th>
 									<th className='w-32 px-4 py-3'>Дедлайн</th>
-									<th className='w-28 px-4 py-3'>Вес</th>
-									<th className='w-44 px-4 py-3'>Влияние</th>
-									<th className='w-40 px-4 py-3'>Система</th>
+									<th className='w-20 px-4 py-3'>Вес</th>
+									<th className='w-36 px-4 py-3'>Влияние</th>
+									<th className='w-36 px-4 py-3'>Система</th>
 									<th className='w-32 px-4 py-3 text-right'>Действия</th>
 								</tr>
 							</thead>
@@ -124,6 +145,7 @@ export function TaskTable({
 										onEdit={onEdit}
 										onComplete={onComplete}
 										onDelete={onDelete}
+										onUpdate={onUpdate}
 									/>
 								))}
 							</tbody>
@@ -140,9 +162,34 @@ interface SortableRowProps {
 	onEdit: (task: TaskListItem) => void
 	onComplete: (task: TaskListItem) => void
 	onDelete: (task: TaskListItem) => void
+	onUpdate?: (
+		taskId: string,
+		updates: {
+			fields?: {
+				title?: string
+				description?: string
+				responsibleId?: string
+				deadline?: string
+				status?: string
+			}
+			metadata?: {
+				abc?: string | null
+				impact?: string | null
+				system?: string | null
+				weight?: number | null
+			}
+			otherTags?: string[]
+		}
+	) => Promise<void>
 }
 
-function SortableRow({ task, onEdit, onComplete, onDelete }: SortableRowProps) {
+function SortableRow({
+	task,
+	onEdit,
+	onComplete,
+	onDelete,
+	onUpdate,
+}: SortableRowProps) {
 	const {
 		attributes,
 		listeners,
@@ -166,13 +213,18 @@ function SortableRow({ task, onEdit, onComplete, onDelete }: SortableRowProps) {
 		  })
 		: '—'
 
+	// Цветовая индикация строки
+	const rowColorClass = getRowColorClass(task)
+
 	return (
 		<tr
 			ref={setNodeRef}
 			style={style}
 			className={clsx(
 				'border-t border-gray-800 transition',
-				isDragging ? 'bg-blue-900/40 shadow-lg' : 'hover:bg-gray-800/40'
+				isDragging
+					? 'bg-blue-900/40 shadow-lg'
+					: rowColorClass || 'hover:bg-gray-800/40'
 			)}
 		>
 			<td className='px-4 py-3 text-sm font-semibold text-gray-400'>
@@ -189,20 +241,29 @@ function SortableRow({ task, onEdit, onComplete, onDelete }: SortableRowProps) {
 				</button>
 			</td>
 			<td className='px-4 py-3'>
-				<span
-					className={clsx(
-						'inline-flex items-center rounded-md px-2 py-1 text-xs font-bold transition',
-						getAbcClass(task.metadata.abc)
-					)}
-				>
-					{task.metadata.abc ?? '—'}
-				</span>
+				<InlineSelect
+					value={task.metadata.abc ?? ''}
+					options={['A', 'B', 'C']}
+					onChange={value => {
+						onUpdate?.(task.id, {
+							metadata: {
+								...task.metadata,
+								abc: value || null,
+							},
+							otherTags: task.otherTags,
+						})
+					}}
+					className={getAbcClass(task.metadata.abc)}
+					placeholder='—'
+				/>
 			</td>
 			<td className='px-4 py-3 align-top'>
-				<div className='space-y-1'>
-					<div className='font-semibold text-white'>{task.title}</div>
+				<div className='space-y-1 max-w-md'>
+					<div className='font-semibold text-white break-words'>
+						{task.title}
+					</div>
 					{task.description && (
-						<p className='text-xs text-gray-400 line-clamp-2'>
+						<p className='text-xs text-gray-400 line-clamp-3 max-h-[4.5rem] overflow-hidden break-words'>
 							{task.description}
 						</p>
 					)}
@@ -235,13 +296,51 @@ function SortableRow({ task, onEdit, onComplete, onDelete }: SortableRowProps) {
 				{deadline}
 			</td>
 			<td className='px-4 py-3 text-center text-sm text-gray-200'>
-				{task.metadata.weight ?? '—'}
+				<InlineNumberInput
+					value={task.metadata.weight ?? ''}
+					onChange={value => {
+						onUpdate?.(task.id, {
+							metadata: {
+								...task.metadata,
+								weight: value !== '' ? Number(value) : null,
+							},
+							otherTags: task.otherTags,
+						})
+					}}
+					placeholder='—'
+				/>
 			</td>
 			<td className='px-4 py-3 text-sm text-gray-300'>
-				{task.metadata.impact ?? '—'}
+				<InlineSelect
+					value={task.metadata.impact ?? ''}
+					options={['Сильное', 'Умеренное', 'Слабое']}
+					onChange={value => {
+						onUpdate?.(task.id, {
+							metadata: {
+								...task.metadata,
+								impact: value || null,
+							},
+							otherTags: task.otherTags,
+						})
+					}}
+					className={getImpactClass(task.metadata.impact)}
+					placeholder='—'
+				/>
 			</td>
 			<td className='px-4 py-3 text-sm text-gray-300'>
-				{task.metadata.system ?? '—'}
+				<InlineTextInput
+					value={task.metadata.system ?? ''}
+					onChange={value => {
+						onUpdate?.(task.id, {
+							metadata: {
+								...task.metadata,
+								system: value || null,
+							},
+							otherTags: task.otherTags,
+						})
+					}}
+					placeholder='—'
+				/>
 			</td>
 			<td className='px-4 py-3 text-right'>
 				<div className='flex justify-end gap-2'>
@@ -272,6 +371,218 @@ function SortableRow({ task, onEdit, onComplete, onDelete }: SortableRowProps) {
 				</div>
 			</td>
 		</tr>
+	)
+}
+
+// Inline компоненты для редактирования
+function InlineSelect({
+	value,
+	options,
+	onChange,
+	className,
+	placeholder,
+}: {
+	value: string
+	options: string[]
+	onChange: (value: string) => void
+	className?: string
+	placeholder?: string
+}) {
+	const [isOpen, setIsOpen] = useState(false)
+	const selectRef = useRef<HTMLDivElement>(null)
+
+	useEffect(() => {
+		const handleClickOutside = (event: MouseEvent) => {
+			if (
+				selectRef.current &&
+				!selectRef.current.contains(event.target as Node)
+			) {
+				setIsOpen(false)
+			}
+		}
+
+		if (isOpen) {
+			document.addEventListener('mousedown', handleClickOutside)
+			return () => document.removeEventListener('mousedown', handleClickOutside)
+		}
+	}, [isOpen])
+
+	return (
+		<div ref={selectRef} className='relative'>
+			<button
+				type='button'
+				onClick={() => setIsOpen(!isOpen)}
+				className={clsx(
+					'inline-flex items-center rounded-md px-2 py-1 text-xs font-bold transition w-full justify-center min-w-[3rem]',
+					className || 'bg-gray-800 text-gray-400 border border-gray-700',
+					isOpen && 'ring-2 ring-blue-500'
+				)}
+			>
+				{value || placeholder || '—'}
+			</button>
+			{isOpen && (
+				<div className='absolute z-50 mt-1 w-full rounded-md bg-gray-800 border border-gray-700 shadow-lg'>
+					<div className='py-1'>
+						<button
+							type='button'
+							onClick={() => {
+								onChange('')
+								setIsOpen(false)
+							}}
+							className='w-full text-left px-3 py-1.5 text-xs text-gray-400 hover:bg-gray-700'
+						>
+							{placeholder || '—'}
+						</button>
+						{options.map(option => (
+							<button
+								key={option}
+								type='button'
+								onClick={() => {
+									onChange(option)
+									setIsOpen(false)
+								}}
+								className={clsx(
+									'w-full text-left px-3 py-1.5 text-xs hover:bg-gray-700',
+									value === option
+										? 'text-white font-semibold'
+										: 'text-gray-300'
+								)}
+							>
+								{option}
+							</button>
+						))}
+					</div>
+				</div>
+			)}
+		</div>
+	)
+}
+
+function InlineTextInput({
+	value,
+	onChange,
+	placeholder,
+}: {
+	value: string
+	onChange: (value: string) => void
+	placeholder?: string
+}) {
+	const [isEditing, setIsEditing] = useState(false)
+	const [tempValue, setTempValue] = useState(value)
+	const inputRef = useRef<HTMLInputElement>(null)
+
+	useEffect(() => {
+		if (isEditing && inputRef.current) {
+			inputRef.current.focus()
+			inputRef.current.select()
+		}
+	}, [isEditing])
+
+	useEffect(() => {
+		setTempValue(value)
+	}, [value])
+
+	const handleBlur = () => {
+		onChange(tempValue)
+		setIsEditing(false)
+	}
+
+	const handleKeyDown = (e: React.KeyboardEvent) => {
+		if (e.key === 'Enter') {
+			onChange(tempValue)
+			setIsEditing(false)
+		} else if (e.key === 'Escape') {
+			setTempValue(value)
+			setIsEditing(false)
+		}
+	}
+
+	if (isEditing) {
+		return (
+			<input
+				ref={inputRef}
+				type='text'
+				value={tempValue}
+				onChange={e => setTempValue(e.target.value)}
+				onBlur={handleBlur}
+				onKeyDown={handleKeyDown}
+				className='w-full px-2 py-1 text-xs bg-gray-800 text-white border border-blue-500 rounded focus:outline-none focus:ring-2 focus:ring-blue-500'
+			/>
+		)
+	}
+
+	return (
+		<button
+			type='button'
+			onClick={() => setIsEditing(true)}
+			className='w-full text-left px-2 py-1 text-xs text-gray-300 hover:bg-gray-800 rounded transition'
+		>
+			{value || placeholder || '—'}
+		</button>
+	)
+}
+
+function InlineNumberInput({
+	value,
+	onChange,
+	placeholder,
+}: {
+	value: number | string
+	onChange: (value: string) => void
+	placeholder?: string
+}) {
+	const [isEditing, setIsEditing] = useState(false)
+	const [tempValue, setTempValue] = useState(String(value || ''))
+	const inputRef = useRef<HTMLInputElement>(null)
+
+	useEffect(() => {
+		if (isEditing && inputRef.current) {
+			inputRef.current.focus()
+			inputRef.current.select()
+		}
+	}, [isEditing])
+
+	useEffect(() => {
+		setTempValue(String(value || ''))
+	}, [value])
+
+	const handleBlur = () => {
+		onChange(tempValue)
+		setIsEditing(false)
+	}
+
+	const handleKeyDown = (e: React.KeyboardEvent) => {
+		if (e.key === 'Enter') {
+			onChange(tempValue)
+			setIsEditing(false)
+		} else if (e.key === 'Escape') {
+			setTempValue(String(value || ''))
+			setIsEditing(false)
+		}
+	}
+
+	if (isEditing) {
+		return (
+			<input
+				ref={inputRef}
+				type='number'
+				value={tempValue}
+				onChange={e => setTempValue(e.target.value)}
+				onBlur={handleBlur}
+				onKeyDown={handleKeyDown}
+				className='w-16 px-2 py-1 text-xs bg-gray-800 text-white border border-blue-500 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 text-center'
+			/>
+		)
+	}
+
+	return (
+		<button
+			type='button'
+			onClick={() => setIsEditing(true)}
+			className='w-full text-center px-2 py-1 text-xs text-gray-200 hover:bg-gray-800 rounded transition'
+		>
+			{value || placeholder || '—'}
+		</button>
 	)
 }
 
@@ -309,4 +620,48 @@ function getAbcClass(value: string | null | undefined) {
 		default:
 			return 'bg-gray-800 text-gray-400 border border-gray-700'
 	}
+}
+
+function getImpactClass(value: string | null | undefined) {
+	switch (value) {
+		case 'Сильное':
+			return 'bg-red-500/10 text-red-200 border border-red-500/40'
+		case 'Умеренное':
+			return 'bg-orange-500/10 text-orange-200 border border-orange-500/40'
+		case 'Слабое':
+			return 'bg-yellow-500/10 text-yellow-200 border border-yellow-500/40'
+		default:
+			return 'bg-gray-800 text-gray-400 border border-gray-700'
+	}
+}
+
+function getRowColorClass(task: TaskListItem): string | null {
+	// Приоритет по статусу
+	if (task.status === '5') {
+		// Готово - зелёный оттенок
+		return 'bg-green-900/20'
+	}
+	if (task.status === '7') {
+		// Отклонена - красный оттенок
+		return 'bg-red-900/20'
+	}
+	if (task.isOverdue) {
+		// Просрочена - красный оттенок
+		return 'bg-red-900/30'
+	}
+	if (task.status === '3') {
+		// Выполняется - синий оттенок
+		return 'bg-blue-900/20'
+	}
+	if (task.status === '2') {
+		// Ждёт выполнения - жёлтый оттенок
+		return 'bg-yellow-900/20'
+	}
+
+	// Приоритет по ABC
+	if (task.metadata.abc?.toUpperCase() === 'A') {
+		return 'bg-emerald-900/10'
+	}
+
+	return null
 }
