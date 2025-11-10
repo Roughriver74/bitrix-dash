@@ -175,8 +175,25 @@ export class TaskService {
       fields.UF_CRM_TASK = rest.ufCrmTask;
     }
 
-    const baseTags = tags ?? otherTags ?? [];
-    if (metadata || tags) {
+    // Если обновляются метаданные или теги, нужно получить текущие теги задачи
+    if (metadata || tags || otherTags) {
+      let baseTags: string[] = [];
+      
+      if (tags) {
+        // Если переданы tags напрямую, используем их
+        baseTags = tags;
+      } else if (otherTags) {
+        // Если переданы otherTags, используем их (они уже без метаданных)
+        baseTags = otherTags;
+      } else {
+        // Если переданы только метаданные, получаем текущие теги задачи
+        const currentTask = await this.client.call<any>('tasks.task.get', {
+          taskId,
+        });
+        const currentTags = currentTask?.task?.TAGS || currentTask?.result?.task?.TAGS || [];
+        baseTags = Array.isArray(currentTags) ? currentTags : [];
+      }
+      
       fields.TAGS = mergeTagsWithMetadata(baseTags, metadata);
     }
 

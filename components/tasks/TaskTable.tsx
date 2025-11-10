@@ -221,7 +221,7 @@ function SortableRow({
 			ref={setNodeRef}
 			style={style}
 			className={clsx(
-				'border-t border-gray-800 transition',
+				'border-t border-gray-800 transition-colors',
 				isDragging
 					? 'bg-blue-900/40 shadow-lg'
 					: rowColorClass || 'hover:bg-gray-800/40'
@@ -250,7 +250,6 @@ function SortableRow({
 								...task.metadata,
 								abc: value || null,
 							},
-							otherTags: task.otherTags,
 						})
 					}}
 					className={getAbcClass(task.metadata.abc)}
@@ -304,7 +303,6 @@ function SortableRow({
 								...task.metadata,
 								weight: value !== '' ? Number(value) : null,
 							},
-							otherTags: task.otherTags,
 						})
 					}}
 					placeholder='—'
@@ -320,7 +318,6 @@ function SortableRow({
 								...task.metadata,
 								impact: value || null,
 							},
-							otherTags: task.otherTags,
 						})
 					}}
 					className={getImpactClass(task.metadata.impact)}
@@ -336,7 +333,6 @@ function SortableRow({
 								...task.metadata,
 								system: value || null,
 							},
-							otherTags: task.otherTags,
 						})
 					}}
 					placeholder='—'
@@ -408,13 +404,13 @@ function InlineSelect({
 	}, [isOpen])
 
 	return (
-		<div ref={selectRef} className='relative'>
+		<div ref={selectRef} className='relative w-full'>
 			<button
 				type='button'
 				onClick={() => setIsOpen(!isOpen)}
 				className={clsx(
-					'inline-flex items-center rounded-md px-2 py-1 text-xs font-bold transition w-full justify-center min-w-[3rem]',
-					className || 'bg-gray-800 text-gray-400 border border-gray-700',
+					'inline-flex items-center justify-center rounded-md px-2 py-1 text-xs font-bold transition w-full min-w-[3rem] border',
+					className || 'bg-gray-800 text-gray-400 border-gray-700',
 					isOpen && 'ring-2 ring-blue-500'
 				)}
 			>
@@ -506,7 +502,7 @@ function InlineTextInput({
 				onChange={e => setTempValue(e.target.value)}
 				onBlur={handleBlur}
 				onKeyDown={handleKeyDown}
-				className='w-full px-2 py-1 text-xs bg-gray-800 text-white border border-blue-500 rounded focus:outline-none focus:ring-2 focus:ring-blue-500'
+				className='w-full px-2 py-1 text-xs bg-gray-800 text-white border border-blue-500 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500'
 			/>
 		)
 	}
@@ -515,7 +511,7 @@ function InlineTextInput({
 		<button
 			type='button'
 			onClick={() => setIsEditing(true)}
-			className='w-full text-left px-2 py-1 text-xs text-gray-300 hover:bg-gray-800 rounded transition'
+			className='w-full text-left px-2 py-1 text-xs text-gray-300 hover:bg-gray-800 rounded-md transition border border-transparent hover:border-gray-700'
 		>
 			{value || placeholder || '—'}
 		</button>
@@ -570,7 +566,7 @@ function InlineNumberInput({
 				onChange={e => setTempValue(e.target.value)}
 				onBlur={handleBlur}
 				onKeyDown={handleKeyDown}
-				className='w-16 px-2 py-1 text-xs bg-gray-800 text-white border border-blue-500 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 text-center'
+				className='w-16 px-2 py-1 text-xs bg-gray-800 text-white border border-blue-500 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-center'
 			/>
 		)
 	}
@@ -579,7 +575,7 @@ function InlineNumberInput({
 		<button
 			type='button'
 			onClick={() => setIsEditing(true)}
-			className='w-full text-center px-2 py-1 text-xs text-gray-200 hover:bg-gray-800 rounded transition'
+			className='w-full text-center px-2 py-1 text-xs text-gray-200 hover:bg-gray-800 rounded-md transition border border-transparent hover:border-gray-700'
 		>
 			{value || placeholder || '—'}
 		</button>
@@ -658,9 +654,26 @@ function getRowColorClass(task: TaskListItem): string | null {
 		return 'bg-yellow-900/20'
 	}
 
+	// Приоритет по влиянию
+	if (task.metadata.impact === 'Сильное') {
+		return 'bg-red-900/15'
+	}
+	if (task.metadata.impact === 'Умеренное') {
+		return 'bg-orange-900/15'
+	}
+	if (task.metadata.impact === 'Слабое') {
+		return 'bg-yellow-900/15'
+	}
+
 	// Приоритет по ABC
 	if (task.metadata.abc?.toUpperCase() === 'A') {
-		return 'bg-emerald-900/10'
+		return 'bg-emerald-900/15'
+	}
+	if (task.metadata.abc?.toUpperCase() === 'B') {
+		return 'bg-amber-900/10'
+	}
+	if (task.metadata.abc?.toUpperCase() === 'C') {
+		return 'bg-sky-900/10'
 	}
 
 	return null
