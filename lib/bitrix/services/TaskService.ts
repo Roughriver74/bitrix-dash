@@ -1,5 +1,6 @@
 import { BitrixClient } from '../client';
-import { BitrixTask, BitrixCalendarEvent, UserAbsenceInfo } from '../types';
+import { BitrixTask } from '../types';
+import { TaskMetadata, mergeTagsWithMetadata } from '@/lib/tasks/metadata';
 
 export class TaskService {
   constructor(private client: BitrixClient) {}
@@ -97,6 +98,130 @@ export class TaskService {
     const enrichedTasks = await this.enrichTasksData(allTasks);
     
     return enrichedTasks;
+  }
+
+  async createTask(options: CreateTaskOptions): Promise<BitrixTask> {
+    const { metadata, tags = [], ...rest } = options;
+
+    const fields: Record<string, any> = {
+      TITLE: rest.title,
+      RESPONSIBLE_ID: rest.responsibleId,
+    };
+
+    if (rest.description !== undefined) {
+      fields.DESCRIPTION = rest.description;
+    }
+
+    if (rest.deadline) {
+      fields.DEADLINE = rest.deadline;
+    }
+
+    if (rest.priority !== undefined) {
+      fields.PRIORITY = rest.priority;
+    }
+
+    if (rest.createdBy) {
+      fields.CREATED_BY = rest.createdBy;
+    }
+
+    if (rest.ufCrmTask && rest.ufCrmTask.length > 0) {
+      fields.UF_CRM_TASK = rest.ufCrmTask;
+    }
+
+    const finalTags = mergeTagsWithMetadata(tags, metadata);
+    if (finalTags.length > 0) {
+      fields.TAGS = finalTags;
+    }
+
+    const response = await this.client.call<any>('tasks.task.add', {
+      fields,
+      params: { RETURN_TASK: true },
+    });
+
+    const task = response?.task || response?.result?.task || response;
+    const enriched = await this.enrichTasksData([task]);
+    return enriched[0];
+  }
+
+  async updateTask(taskId: string, options: UpdateTaskOptions): Promise<BitrixTask | null> {
+    const { metadata, tags, otherTags, ...rest } = options;
+    const fields: Record<string, any> = {};
+
+    if (rest.title !== undefined) {
+      fields.TITLE = rest.title;
+    }
+
+    if (rest.description !== undefined) {
+      fields.DESCRIPTION = rest.description;
+    }
+
+    if (rest.responsibleId !== undefined) {
+      fields.RESPONSIBLE_ID = rest.responsibleId;
+    }
+
+    if (rest.deadline !== undefined) {
+      fields.DEADLINE = rest.deadline;
+    }
+
+    if (rest.priority !== undefined) {
+      fields.PRIORITY = rest.priority;
+    }
+
+    if (rest.status !== undefined) {
+      fields.STATUS = rest.status;
+    }
+
+    if (rest.ufCrmTask !== undefined) {
+      fields.UF_CRM_TASK = rest.ufCrmTask;
+    }
+
+    const baseTags = tags ?? otherTags ?? [];
+    if (metadata || tags) {
+      fields.TAGS = mergeTagsWithMetadata(baseTags, metadata);
+    }
+
+    if (Object.keys(fields).length === 0) {
+      return null;
+    }
+
+    const response = await this.client.call<any>('tasks.task.update', {
+      taskId,
+      fields,
+      params: { RETURN_TASK: true },
+    });
+
+    const task = response?.task || response?.result?.task;
+    if (!task) {
+      return null;
+    }
+
+    const enriched = await this.enrichTasksData([task]);
+    return enriched[0] ?? null;
+  }
+
+  async updateTaskTags(taskId: string, tags: string[], metadata?: TaskMetadata): Promise<void> {
+    const finalTags = mergeTagsWithMetadata(tags, metadata);
+    await this.client.call('tasks.task.update', {
+      taskId,
+      fields: {
+        TAGS: finalTags,
+      },
+    });
+  }
+
+  async deleteTask(taskId: string): Promise<boolean> {
+    const result = await this.client.call<{ result: boolean }>('tasks.task.delete', {
+      taskId,
+    });
+
+    return Boolean(result?.result ?? result);
+  }
+
+  async completeTask(taskId: string): Promise<boolean> {
+    const result = await this.client.call<{ result: boolean }>('tasks.task.complete', {
+      taskId,
+    });
+    return Boolean(result?.result ?? result);
   }
 
   private async enrichTasksData(tasks: BitrixTask[]): Promise<BitrixTask[]> {
@@ -204,4 +329,29 @@ export class TaskService {
     
     return chunks;
   }
+}
+
+export interface CreateTaskOptions {
+  title: string;
+  responsibleId: string;
+  description?: string;
+  deadline?: string;
+  priority?: number;
+  createdBy?: string;
+  ufCrmTask?: string[];
+  tags?: string[];
+  metadata?: TaskMetadata;
+}
+
+export interface UpdateTaskOptions {
+  title?: string;
+  description?: string;
+  responsibleId?: string;
+  deadline?: string;
+  priority?: number;
+  status?: string;
+  ufCrmTask?: string[];
+  tags?: string[];
+  otherTags?: string[];
+  metadata?: TaskMetadata;
 }
