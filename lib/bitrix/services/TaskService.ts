@@ -21,18 +21,25 @@ export class TaskService {
     for (const [index, chunk] of userChunks.entries()) {
       try {
         // Получаем активные задачи (исключаем завершенные и отложенные)
-        const activeTasks = await this.client.getAllTasks({
-          RESPONSIBLE_ID: chunk,
-          '!STATUS': [5, 6] // Исключаем завершенные (5) и отложенные (6)
-        });
+        // Явно указываем поля, которые нужно получить, включая TAGS
+        const activeTasks = await this.client.getAllTasks(
+          {
+            RESPONSIBLE_ID: chunk,
+            '!STATUS': [5, 6] // Исключаем завершенные (5) и отложенные (6)
+          },
+          ['ID', 'TITLE', 'DESCRIPTION', 'RESPONSIBLE_ID', 'CREATED_BY', 'CREATED_DATE', 'CHANGED_DATE', 'CLOSED_DATE', 'DEADLINE', 'STATUS', 'PRIORITY', 'GROUP_ID', 'TAGS', 'UF_CRM_TASK']
+        );
         allActiveTasks.push(...activeTasks);
         
         // Получаем завершенные задачи за последние 30 дней
-        const completedTasks = await this.client.getAllTasks({
-          RESPONSIBLE_ID: chunk,
-          STATUS: 5, // Только завершенные
-          '>=CLOSED_DATE': thirtyDaysAgo.toISOString()
-        });
+        const completedTasks = await this.client.getAllTasks(
+          {
+            RESPONSIBLE_ID: chunk,
+            STATUS: 5, // Только завершенные
+            '>=CLOSED_DATE': thirtyDaysAgo.toISOString()
+          },
+          ['ID', 'TITLE', 'DESCRIPTION', 'RESPONSIBLE_ID', 'CREATED_BY', 'CREATED_DATE', 'CHANGED_DATE', 'CLOSED_DATE', 'DEADLINE', 'STATUS', 'PRIORITY', 'GROUP_ID', 'TAGS', 'UF_CRM_TASK']
+        );
         allCompletedTasks.push(...completedTasks);
         
       } catch (error) {
@@ -66,9 +73,12 @@ export class TaskService {
     for (const [index, chunk] of userChunks.entries()) {
       try {
         // Получаем ВСЕ задачи (включая завершенные)
-        const allUserTasks = await this.client.getAllTasks({
-          RESPONSIBLE_ID: chunk
-        });
+        const allUserTasks = await this.client.getAllTasks(
+          {
+            RESPONSIBLE_ID: chunk
+          },
+          ['ID', 'TITLE', 'DESCRIPTION', 'RESPONSIBLE_ID', 'CREATED_BY', 'CREATED_DATE', 'CHANGED_DATE', 'CLOSED_DATE', 'DEADLINE', 'STATUS', 'PRIORITY', 'GROUP_ID', 'TAGS', 'UF_CRM_TASK']
+        );
         
         // Фильтруем завершенные задачи
         const completedTasks = allUserTasks.filter((task: any) => {
@@ -249,6 +259,60 @@ export class TaskService {
     for (const task of tasks) {
       // Маппинг полей из camelCase в UPPER_CASE для совместимости
       const taskAny = task as any;
+      
+      // Обработка тегов - они могут приходить в разных форматах из Bitrix API
+      let tags: string[] = [];
+      
+      // Bitrix API может возвращать теги в разных местах и форматах
+      // Проверяем различные варианты структуры ответа
+      let tagsSource: any = null;
+      
+      // Вариант 1: Прямое поле TAGS
+      if (taskAny.TAGS !== undefined) {
+        tagsSource = taskAny.TAGS;
+      }
+      // Вариант 2: Поле tags (camelCase)
+      else if (taskAny.tags !== undefined) {
+        tagsSource = taskAny.tags;
+      }
+      // Вариант 3: Вложенная структура (если задача приходит как объект с полем task)
+      else if (taskAny.task?.TAGS !== undefined) {
+        tagsSource = taskAny.task.TAGS;
+      }
+      else if (taskAny.task?.tags !== undefined) {
+        tagsSource = taskAny.task.tags;
+      }
+      
+      if (tagsSource) {
+        if (Array.isArray(tagsSource)) {
+          // Если это массив, обрабатываем каждый элемент
+          tags = tagsSource
+            .map((tag: any) => {
+              // Если тег - объект, извлекаем значение
+              if (typeof tag === 'object' && tag !== null) {
+                return tag.NAME || tag.name || tag.VALUE || tag.value || tag.TITLE || tag.title || String(tag);
+              }
+              // Если тег - строка, используем её
+              return String(tag).trim();
+            })
+            .filter((tag: string) => tag && tag.length > 0);
+        } else if (typeof tagsSource === 'string') {
+          // Если теги приходят как строка, разделяем по запятой
+          tags = tagsSource.split(',').map((t: string) => t.trim()).filter(Boolean);
+        }
+      }
+      
+      // Логируем для отладки (только первые несколько задач)
+      if (enrichedTasks.length < 3 && tags.length === 0 && taskAny.ID) {
+        console.log(`🔍 Задача ${taskAny.ID}: теги не найдены. Структура:`, {
+          hasTAGS: !!taskAny.TAGS,
+          hasTags: !!taskAny.tags,
+          hasTaskTAGS: !!taskAny.task?.TAGS,
+          TAGSValue: taskAny.TAGS,
+          tagsValue: taskAny.tags,
+        });
+      }
+      
       const mappedTask: BitrixTask = {
         ID: taskAny.id || taskAny.ID,
         TITLE: taskAny.title || taskAny.TITLE || 'Без названия',
@@ -265,7 +329,7 @@ export class TaskService {
         STATUS: taskAny.status || taskAny.STATUS,
         PRIORITY: taskAny.priority || taskAny.PRIORITY,
         GROUP_ID: taskAny.groupId || taskAny.GROUP_ID,
-        TAGS: taskAny.tags || taskAny.TAGS,
+        TAGS: tags,
         UF_CRM_TASK: taskAny.ufCrmTask || taskAny.UF_CRM_TASK
       };
       
