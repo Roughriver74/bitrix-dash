@@ -1,9 +1,13 @@
 import { BitrixClient } from '../client';
 import { BitrixTask } from '../types';
 import { TaskMetadata, mergeTagsWithMetadata } from '@/lib/tasks/metadata';
+import { cache } from '@/lib/cache';
 
 export class TaskService {
   constructor(private client: BitrixClient) {}
+  
+  // TTL для кеша тегов задач (1 час)
+  private readonly TASK_TAGS_CACHE_TTL = 3600;
 
   async getAllTasks(userIds: string[]): Promise<{ activeTasks: BitrixTask[], completedTasks: BitrixTask[] }> {
     if (userIds.length === 0) {
@@ -150,7 +154,18 @@ export class TaskService {
 
     const task = response?.task || response?.result?.task || response;
     const enriched = await this.enrichTasksData([task]);
-    return enriched[0];
+    const result = enriched[0];
+    
+    // Сохраняем теги в кеш при создании задачи
+    if (result && result.TAGS) {
+      const cacheKey = `task:${result.ID}:tags`;
+      await cache.setex(cacheKey, this.TASK_TAGS_CACHE_TTL, {
+        TAGS: result.TAGS,
+        ID: result.ID,
+      });
+    }
+    
+    return result;
   }
 
   async updateTask(taskId: string, options: UpdateTaskOptions): Promise<BitrixTask | null> {
@@ -223,7 +238,19 @@ export class TaskService {
     }
 
     const enriched = await this.enrichTasksData([task]);
-    return enriched[0] ?? null;
+    const result = enriched[0] ?? null;
+    
+    // Обновляем кеш тегов после обновления задачи
+    if (result) {
+      const cacheKey = `task:${taskId}:tags`;
+      const tagsToCache = result.TAGS || [];
+      await cache.setex(cacheKey, this.TASK_TAGS_CACHE_TTL, {
+        TAGS: tagsToCache,
+        ID: taskId,
+      });
+    }
+    
+    return result;
   }
 
   async updateTaskTags(taskId: string, tags: string[], metadata?: TaskMetadata): Promise<void> {
@@ -233,6 +260,13 @@ export class TaskService {
       fields: {
         TAGS: finalTags,
       },
+    });
+    
+    // Обновляем кеш тегов
+    const cacheKey = `task:${taskId}:tags`;
+    await cache.setex(cacheKey, this.TASK_TAGS_CACHE_TTL, {
+      TAGS: finalTags,
+      ID: taskId,
     });
   }
 
@@ -251,9 +285,148 @@ export class TaskService {
     return Boolean(result?.result ?? result);
   }
 
+  /**
+   * Получает полную информацию о задаче через tasks.task.get (включая теги)
+   * Использует кеш для минимизации запросов к API
+   * @param taskId ID задачи
+   * @returns Полная информация о задаче или null при ошибке
+   */
+  private async getTaskWithTags(taskId: string): Promise<any | null> {
+    // Проверяем кеш
+    const cacheKey = `task:${taskId}:tags`;
+    const cached = await cache.get(cacheKey);
+    if (cached) {
+      return cached;
+    }
+    
+    try {
+      const response = await this.client.call<any>('tasks.task.get', {
+        taskId,
+      });
+      
+      // Извлекаем задачу из ответа
+      const task = response?.task || response?.result?.task || response;
+      if (!task) {
+        return null;
+      }
+      
+      // Сохраняем в кеш только теги для экономии места
+      const tags = task.TAGS || task.tags || [];
+      await cache.setex(cacheKey, this.TASK_TAGS_CACHE_TTL, {
+        TAGS: tags,
+        ID: task.ID || taskId,
+      });
+      
+      return task;
+    } catch (error) {
+      console.error(`❌ Ошибка при получении задачи ${taskId}:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * Получает вес задачи из Scrum (storyPoints)
+   * @param taskId ID задачи
+   * @returns Вес задачи (storyPoints) или null, если задача не в Scrum или вес не задан
+   */
+  private async getScrumTaskWeight(taskId: string): Promise<number | null> {
+    try {
+      const scrumData = await this.client.call<any>('tasks.api.scrum.task.get', {
+        taskId,
+      });
+      
+      // Проверяем различные варианты структуры ответа
+      const storyPoints = scrumData?.storyPoints 
+        || scrumData?.result?.storyPoints 
+        || scrumData?.task?.storyPoints
+        || scrumData?.data?.storyPoints;
+      
+      if (storyPoints !== undefined && storyPoints !== null) {
+        const weight = Number(storyPoints);
+        if (Number.isFinite(weight) && weight >= 0) {
+          return weight;
+        }
+      }
+      
+      return null;
+    } catch (error) {
+      // Если задача не в Scrum или произошла ошибка, возвращаем null
+      // Не логируем ошибку, так как это нормально для обычных задач
+      return null;
+    }
+  }
+
   private async enrichTasksData(tasks: BitrixTask[]): Promise<BitrixTask[]> {
     const enrichedTasks: BitrixTask[] = [];
     const now = new Date();
+    
+    // Сначала проверяем, какие задачи нуждаются в получении тегов
+    // tasks.task.list не возвращает теги, поэтому нужно получать их через tasks.task.get
+    const tasksNeedingTags = new Map<string, any>();
+    const scrumWeightsMap = new Map<string, number | null>();
+    
+    // Проверяем задачи на наличие тегов
+    for (const task of tasks) {
+      const taskAny = task as any;
+      const taskId = taskAny.id || taskAny.ID;
+      if (!taskId) continue;
+      
+      // Проверяем, есть ли теги в задаче
+      const hasTags = taskAny.TAGS && Array.isArray(taskAny.TAGS) && taskAny.TAGS.length > 0;
+      
+      // Если тегов нет, добавляем в очередь для получения через tasks.task.get
+      if (!hasTags) {
+        tasksNeedingTags.set(taskId, taskAny);
+      }
+    }
+    
+    // Получаем теги для задач, которым они нужны (батчами по 10)
+    const batchSize = 10;
+    const taskIdsNeedingTags = Array.from(tasksNeedingTags.keys());
+    
+    if (taskIdsNeedingTags.length > 0) {
+      console.log(`📋 Получаем теги для ${taskIdsNeedingTags.length} задач через tasks.task.get (батчами по ${batchSize})`);
+      
+      for (let i = 0; i < taskIdsNeedingTags.length; i += batchSize) {
+        const batch = taskIdsNeedingTags.slice(i, i + batchSize);
+        const batchPromises = batch.map(async (taskId) => {
+          const taskWithTags = await this.getTaskWithTags(taskId);
+          if (taskWithTags && taskWithTags.TAGS) {
+            // Обновляем задачу тегами из кеша/API
+            const originalTask = tasksNeedingTags.get(taskId);
+            if (originalTask) {
+              originalTask.TAGS = taskWithTags.TAGS;
+            }
+          }
+        });
+        
+        // Ждем завершения текущего батча перед следующим
+        await Promise.allSettled(batchPromises);
+      }
+      
+      console.log(`✅ Теги получены для ${taskIdsNeedingTags.length} задач`);
+    }
+    
+    // Получаем Scrum-веса для задач, которые могут быть в Scrum
+    // Ограничиваем количество параллельных запросов до 10 для избежания перегрузки API
+    for (let i = 0; i < tasks.length; i += batchSize) {
+      const batch = tasks.slice(i, i + batchSize);
+      const batchPromises = batch.map(async (task) => {
+        const taskAny = task as any;
+        const taskId = taskAny.id || taskAny.ID;
+        // Пробуем получить вес из Scrum для всех задач
+        // Если задача не в Scrum, метод вернет null без ошибки
+        if (taskId) {
+          const weight = await this.getScrumTaskWeight(taskId);
+          if (weight !== null) {
+            scrumWeightsMap.set(taskId, weight);
+          }
+        }
+      });
+      
+      // Ждем завершения текущего батча перед следующим
+      await Promise.allSettled(batchPromises);
+    }
     
     // Быстрое обогащение без истории - используем только CHANGED_DATE
     for (const task of tasks) {
@@ -302,19 +475,37 @@ export class TaskService {
         }
       }
       
-      // Логируем для отладки (только первые несколько задач)
-      if (enrichedTasks.length < 3 && tags.length === 0 && taskAny.ID) {
-        console.log(`🔍 Задача ${taskAny.ID}: теги не найдены. Структура:`, {
-          hasTAGS: !!taskAny.TAGS,
-          hasTags: !!taskAny.tags,
-          hasTaskTAGS: !!taskAny.task?.TAGS,
-          TAGSValue: taskAny.TAGS,
-          tagsValue: taskAny.tags,
+      const taskId = taskAny.id || taskAny.ID;
+      
+      // Если теги все еще пустые после попытки получить через tasks.task.get,
+      // проверяем кеш еще раз (на случай если они были получены в другом батче)
+      if (tags.length === 0 && taskId) {
+        const cacheKey = `task:${taskId}:tags`;
+        const cached = await cache.get(cacheKey);
+        if (cached && cached.TAGS && Array.isArray(cached.TAGS) && cached.TAGS.length > 0) {
+          tags = cached.TAGS;
+        }
+      }
+      
+      // Проверяем, есть ли вес из Scrum для этой задачи
+      const scrumWeight = scrumWeightsMap.get(taskId);
+      
+      // Если есть вес из Scrum и его еще нет в тегах, добавляем его
+      if (scrumWeight !== undefined && scrumWeight !== null) {
+        // Проверяем, есть ли уже вес в тегах
+        const hasWeightInTags = tags.some(tag => {
+          const lowerTag = String(tag).toLowerCase().trim();
+          return lowerTag.startsWith('weight:');
         });
+        
+        // Если веса в тегах нет, добавляем его
+        if (!hasWeightInTags) {
+          tags.push(`weight:${scrumWeight}`);
+        }
       }
       
       const mappedTask: BitrixTask = {
-        ID: taskAny.id || taskAny.ID,
+        ID: taskId,
         TITLE: taskAny.title || taskAny.TITLE || 'Без названия',
         DESCRIPTION: taskAny.description || taskAny.DESCRIPTION,
         RESPONSIBLE_ID: taskAny.responsibleId || taskAny.RESPONSIBLE_ID,
