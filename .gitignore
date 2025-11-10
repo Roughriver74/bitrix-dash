@@ -37,3 +37,6 @@ next-env.d.ts
 
 # config
 config.json
+
+# database
+.data/

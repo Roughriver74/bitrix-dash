@@ -17,10 +17,12 @@ import {
 	useSortable,
 	verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
-import { GripVertical, Check, Edit, Trash2 } from 'lucide-react'
+import { GripVertical, Check, Edit, Trash2, X, ChevronDown, ChevronRight, BarChart3 } from 'lucide-react'
 import clsx from 'clsx'
-import { useState, useRef, useEffect } from 'react'
+import React, { useState, useRef, useEffect, useMemo } from 'react'
 import { TaskListItem } from '@/components/tasks/types'
+
+type GroupBy = 'none' | 'abc' | 'status' | 'responsible' | 'impact'
 
 interface TaskTableProps {
 	tasks: TaskListItem[]
@@ -59,6 +61,17 @@ export function TaskTable({
 	onDelete,
 	onUpdate,
 }: TaskTableProps) {
+	const [filters, setFilters] = useState({
+		abc: '',
+		status: '',
+		impact: '',
+		system: '',
+		responsibleName: '',
+	})
+	const [groupBy, setGroupBy] = useState<GroupBy>('none')
+	const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
+	const [showStats, setShowStats] = useState(false)
+
 	const sensors = useSensors(
 		useSensor(PointerSensor, {
 			activationConstraint: {
@@ -70,34 +83,299 @@ export function TaskTable({
 		})
 	)
 
+	// Фильтруем задачи
+	const filteredTasks = useMemo(() => {
+		return tasks.filter(task => {
+			if (filters.abc && task.metadata.abc !== filters.abc) return false
+			if (filters.status && task.status !== filters.status) return false
+			if (filters.impact && task.metadata.impact !== filters.impact) return false
+			if (
+				filters.system &&
+				!task.metadata.system?.toLowerCase().includes(filters.system.toLowerCase())
+			)
+				return false
+			if (
+				filters.responsibleName &&
+				!task.responsibleName?.toLowerCase().includes(filters.responsibleName.toLowerCase())
+			)
+				return false
+			return true
+		})
+	}, [tasks, filters])
+
+	const clearFilters = () => {
+		setFilters({
+			abc: '',
+			status: '',
+			impact: '',
+			system: '',
+			responsibleName: '',
+		})
+	}
+
+	const hasActiveFilters = Object.values(filters).some(f => f !== '')
+
 	const handleDragEnd = (event: DragEndEvent) => {
 		const { active, over } = event
 		if (!over || active.id === over.id) {
 			return
 		}
 
-		const oldIndex = tasks.findIndex(task => task.id === active.id)
-		const newIndex = tasks.findIndex(task => task.id === over.id)
+		// Используем filteredTasks для правильного определения индексов
+		const oldIndex = filteredTasks.findIndex(task => task.id === active.id)
+		const newIndex = filteredTasks.findIndex(task => task.id === over.id)
 		if (oldIndex === -1 || newIndex === -1) {
 			return
 		}
 
-		const reordered = arrayMove(tasks, oldIndex, newIndex).map(
-			(task, index) => ({
-				...task,
-				order: index + 1,
-				metadata: {
-					...task.metadata,
-					manualPriority: index + 1,
-				},
-			})
-		)
+		// Перемещаем в отфильтрованном списке
+		const reorderedFiltered = arrayMove(filteredTasks, oldIndex, newIndex)
 
-		onReorder(reordered)
+		// Обновляем порядок только для отфильтрованных задач
+		const reordered = reorderedFiltered.map((task, index) => ({
+			...task,
+			order: index + 1,
+			metadata: {
+				...task.metadata,
+				manualPriority: index + 1,
+			},
+		}))
+
+		// Объединяем с неотфильтрованными задачами, сохраняя их порядок
+		const taskMap = new Map(reordered.map(t => [t.id, t]))
+		const finalTasks = tasks.map(task => taskMap.get(task.id) || task)
+
+		onReorder(finalTasks)
+	}
+
+	// Получаем уникальные значения для фильтров
+	const uniqueStatuses = useMemo(() => {
+		const statuses = new Set(tasks.map(t => t.status))
+		return Array.from(statuses).sort()
+	}, [tasks])
+
+	const uniqueImpacts = useMemo(() => {
+		const impacts = new Set(
+			tasks.map(t => t.metadata.impact).filter((i): i is string => !!i)
+		)
+		return Array.from(impacts).sort()
+	}, [tasks])
+
+	// Статистика
+	const stats = useMemo(() => {
+		return {
+			total: filteredTasks.length,
+			byAbc: {
+				A: filteredTasks.filter(t => t.metadata.abc === 'A').length,
+				B: filteredTasks.filter(t => t.metadata.abc === 'B').length,
+				C: filteredTasks.filter(t => t.metadata.abc === 'C').length,
+				none: filteredTasks.filter(t => !t.metadata.abc).length,
+			},
+			byStatus: {
+				new: filteredTasks.filter(t => t.status === '1').length,
+				waiting: filteredTasks.filter(t => t.status === '2').length,
+				inProgress: filteredTasks.filter(t => t.status === '3').length,
+				control: filteredTasks.filter(t => t.status === '4').length,
+				completed: filteredTasks.filter(t => t.status === '5').length,
+				deferred: filteredTasks.filter(t => t.status === '6').length,
+				declined: filteredTasks.filter(t => t.status === '7').length,
+			},
+			byImpact: {
+				high: filteredTasks.filter(t => t.metadata.impact === 'Сильное').length,
+				medium: filteredTasks.filter(t => t.metadata.impact === 'Умеренное').length,
+				low: filteredTasks.filter(t => t.metadata.impact === 'Слабое').length,
+			},
+			overdue: filteredTasks.filter(t => t.isOverdue).length,
+		}
+	}, [filteredTasks])
+
+	// Группировка задач
+	const groupedTasks = useMemo(() => {
+		if (groupBy === 'none') {
+			return { 'Все задачи': filteredTasks }
+		}
+
+		const groups: Record<string, TaskListItem[]> = {}
+
+		filteredTasks.forEach(task => {
+			let groupKey = 'Без группы'
+
+			switch (groupBy) {
+				case 'abc':
+					groupKey = task.metadata.abc ? `ABC: ${task.metadata.abc}` : 'ABC: Не задано'
+					break
+				case 'status':
+					const statusMap: Record<string, string> = {
+						'1': 'Новая',
+						'2': 'Ждёт выполнения',
+						'3': 'Выполняется',
+						'4': 'Ждёт контроля',
+						'5': 'Завершена',
+						'6': 'Отложена',
+						'7': 'Отклонена',
+					}
+					groupKey = statusMap[task.status] || task.status
+					break
+				case 'responsible':
+					groupKey = task.responsibleName || 'Без ответственного'
+					break
+				case 'impact':
+					groupKey = task.metadata.impact
+						? `Влияние: ${task.metadata.impact}`
+						: 'Влияние: Не задано'
+					break
+			}
+
+			if (!groups[groupKey]) {
+				groups[groupKey] = []
+			}
+			groups[groupKey].push(task)
+		})
+
+		return groups
+	}, [filteredTasks, groupBy])
+
+	const toggleGroup = (groupKey: string) => {
+		setCollapsedGroups(prev => {
+			const newSet = new Set(prev)
+			if (newSet.has(groupKey)) {
+				newSet.delete(groupKey)
+			} else {
+				newSet.add(groupKey)
+			}
+			return newSet
+		})
+	}
+
+	// Быстрые фильтры
+	const applyQuickFilter = (type: 'myTasks' | 'urgent' | 'today' | 'highPriority') => {
+		clearFilters()
+		switch (type) {
+			case 'urgent':
+				// Фильтр для срочных задач (статус "Выполняется" или просроченные)
+				setFilters(prev => ({ ...prev, status: '3' }))
+				break
+			case 'highPriority':
+				// Высокий приоритет - задачи ABC: A
+				setFilters(prev => ({ ...prev, abc: 'A' }))
+				break
+		}
 	}
 
 	return (
 		<div className='overflow-hidden rounded-xl border border-gray-800 bg-gray-900'>
+			{/* Панель управления */}
+			<div className='bg-gray-800/50 px-4 py-3 border-b border-gray-700'>
+				<div className='flex flex-wrap items-center gap-3'>
+					{/* Группировка */}
+					<div className='flex items-center gap-2'>
+						<label className='text-xs text-gray-400'>Группировать:</label>
+						<select
+							value={groupBy}
+							onChange={e => setGroupBy(e.target.value as GroupBy)}
+							className='px-3 py-1.5 text-xs bg-gray-900 text-gray-300 border border-gray-700 rounded-md focus:border-blue-500 focus:outline-none'
+						>
+							<option value='none'>Без группировки</option>
+							<option value='abc'>По ABC</option>
+							<option value='status'>По статусу</option>
+							<option value='responsible'>По ответственному</option>
+							<option value='impact'>По влиянию</option>
+						</select>
+					</div>
+
+					{/* Быстрые фильтры */}
+					<div className='flex items-center gap-2 ml-4'>
+						<span className='text-xs text-gray-400'>Быстро:</span>
+						<button
+							onClick={() => applyQuickFilter('urgent')}
+							className={clsx(
+								'px-3 py-1.5 text-xs rounded-md transition border',
+								filters.status === '3'
+									? 'bg-blue-600 text-white border-blue-500'
+									: 'bg-gray-900 text-gray-300 border-gray-700 hover:border-blue-500'
+							)}
+						>
+							В работе
+						</button>
+						<button
+							onClick={() => applyQuickFilter('highPriority')}
+							className={clsx(
+								'px-3 py-1.5 text-xs rounded-md transition border',
+								filters.abc === 'A'
+									? 'bg-emerald-600 text-white border-emerald-500'
+									: 'bg-gray-900 text-gray-300 border-gray-700 hover:border-emerald-500'
+							)}
+						>
+							Приоритет A
+						</button>
+						{stats.overdue > 0 && (
+							<button
+								className='px-3 py-1.5 text-xs rounded-md transition border bg-red-900/40 text-red-200 border-red-700/60 hover:bg-red-900/60'
+							>
+								Просрочено: {stats.overdue}
+							</button>
+						)}
+					</div>
+
+					{/* Статистика */}
+					<button
+						onClick={() => setShowStats(!showStats)}
+						className='ml-auto px-3 py-1.5 text-xs rounded-md transition border bg-gray-900 text-gray-300 border-gray-700 hover:border-blue-500 flex items-center gap-1.5'
+					>
+						<BarChart3 className='h-3.5 w-3.5' />
+						Статистика
+					</button>
+				</div>
+
+				{/* Статистика развернутая */}
+				{showStats && (
+					<div className='mt-3 pt-3 border-t border-gray-700 grid grid-cols-2 md:grid-cols-4 gap-3'>
+						<div className='bg-gray-900/50 rounded-lg p-3 border border-gray-700'>
+							<div className='text-xs text-gray-400 mb-1'>По ABC</div>
+							<div className='flex gap-2 text-xs'>
+								<span className='text-emerald-400'>A: {stats.byAbc.A}</span>
+								<span className='text-amber-400'>B: {stats.byAbc.B}</span>
+								<span className='text-sky-400'>C: {stats.byAbc.C}</span>
+							</div>
+						</div>
+						<div className='bg-gray-900/50 rounded-lg p-3 border border-gray-700'>
+							<div className='text-xs text-gray-400 mb-1'>По статусу</div>
+							<div className='flex flex-col gap-0.5 text-xs'>
+								<span className='text-blue-400'>В работе: {stats.byStatus.inProgress}</span>
+								<span className='text-yellow-400'>Ожидает: {stats.byStatus.waiting}</span>
+								<span className='text-green-400'>Готово: {stats.byStatus.completed}</span>
+							</div>
+						</div>
+						<div className='bg-gray-900/50 rounded-lg p-3 border border-gray-700'>
+							<div className='text-xs text-gray-400 mb-1'>По влиянию</div>
+							<div className='flex flex-col gap-0.5 text-xs'>
+								<span className='text-red-400'>Сильное: {stats.byImpact.high}</span>
+								<span className='text-orange-400'>Умеренное: {stats.byImpact.medium}</span>
+								<span className='text-yellow-400'>Слабое: {stats.byImpact.low}</span>
+							</div>
+						</div>
+						<div className='bg-gray-900/50 rounded-lg p-3 border border-gray-700'>
+							<div className='text-xs text-gray-400 mb-1'>Всего</div>
+							<div className='text-2xl font-bold text-white'>{stats.total}</div>
+						</div>
+					</div>
+				)}
+			</div>
+
+			{hasActiveFilters && (
+				<div className='bg-gray-800/30 px-4 py-2 border-b border-gray-700 flex items-center justify-between'>
+					<span className='text-xs text-gray-400'>
+						Показано {filteredTasks.length} из {tasks.length} задач
+					</span>
+					<button
+						onClick={clearFilters}
+						className='text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1'
+					>
+						<X className='h-3 w-3' />
+						Сбросить фильтры
+					</button>
+				</div>
+			)}
 			<div className='overflow-x-auto'>
 				<DndContext
 					sensors={sensors}
@@ -105,7 +383,7 @@ export function TaskTable({
 					onDragEnd={handleDragEnd}
 				>
 					<SortableContext
-						items={tasks.map(task => task.id)}
+						items={filteredTasks.map(task => task.id)}
 						strategy={verticalListSortingStrategy}
 					>
 						<table className='w-full border-collapse table-auto'>
@@ -113,6 +391,7 @@ export function TaskTable({
 								<tr className='text-left text-sm font-medium text-gray-300'>
 									<th className='w-12 px-4 py-3'>#</th>
 									<th className='w-12 px-4 py-3'></th>
+									<th className='w-20 px-4 py-3'>ID</th>
 									<th className='w-20 px-4 py-3'>ABC</th>
 									<th className='px-4 py-3 min-w-[300px]'>Задача</th>
 									<th className='w-40 px-4 py-3'>Ответственный</th>
@@ -123,31 +402,209 @@ export function TaskTable({
 									<th className='w-36 px-4 py-3'>Система</th>
 									<th className='w-32 px-4 py-3 text-right'>Действия</th>
 								</tr>
+								<tr className='bg-gray-800/90 border-t border-gray-700'>
+									<th className='px-2 py-2'></th>
+									<th className='px-2 py-2'></th>
+									<th className='px-2 py-2'></th>
+									<th className='px-2 py-2'>
+										<select
+											value={filters.abc}
+											onChange={e =>
+												setFilters(prev => ({ ...prev, abc: e.target.value }))
+											}
+											className='w-full px-2 py-1 text-xs bg-gray-900 text-gray-300 border border-gray-700 rounded focus:border-blue-500 focus:outline-none'
+										>
+											<option value=''>Все</option>
+											<option value='A'>A</option>
+											<option value='B'>B</option>
+											<option value='C'>C</option>
+										</select>
+									</th>
+									<th className='px-2 py-2'></th>
+									<th className='px-2 py-2'>
+										<input
+											type='text'
+											placeholder='Фильтр...'
+											value={filters.responsibleName}
+											onChange={e =>
+												setFilters(prev => ({
+													...prev,
+													responsibleName: e.target.value,
+												}))
+											}
+											className='w-full px-2 py-1 text-xs bg-gray-900 text-gray-300 border border-gray-700 rounded focus:border-blue-500 focus:outline-none placeholder-gray-600'
+										/>
+									</th>
+									<th className='px-2 py-2'>
+										<select
+											value={filters.status}
+											onChange={e =>
+												setFilters(prev => ({ ...prev, status: e.target.value }))
+											}
+											className='w-full px-2 py-1 text-xs bg-gray-900 text-gray-300 border border-gray-700 rounded focus:border-blue-500 focus:outline-none'
+										>
+											<option value=''>Все</option>
+											{uniqueStatuses.map(status => (
+												<option key={status} value={status}>
+													{status === '1'
+														? 'Новая'
+														: status === '2'
+														? 'Ждёт'
+														: status === '3'
+														? 'Выполняется'
+														: status === '4'
+														? 'Контроль'
+														: status === '5'
+														? 'Готово'
+														: status === '6'
+														? 'Отложена'
+														: status === '7'
+														? 'Отклонена'
+														: status}
+												</option>
+											))}
+										</select>
+									</th>
+									<th className='px-2 py-2'></th>
+									<th className='px-2 py-2'></th>
+									<th className='px-2 py-2'>
+										<select
+											value={filters.impact}
+											onChange={e =>
+												setFilters(prev => ({ ...prev, impact: e.target.value }))
+											}
+											className='w-full px-2 py-1 text-xs bg-gray-900 text-gray-300 border border-gray-700 rounded focus:border-blue-500 focus:outline-none'
+										>
+											<option value=''>Все</option>
+											{uniqueImpacts.map(impact => (
+												<option key={impact} value={impact}>
+													{impact}
+												</option>
+											))}
+										</select>
+									</th>
+									<th className='px-2 py-2'>
+										<input
+											type='text'
+											placeholder='Фильтр...'
+											value={filters.system}
+											onChange={e =>
+												setFilters(prev => ({ ...prev, system: e.target.value }))
+											}
+											className='w-full px-2 py-1 text-xs bg-gray-900 text-gray-300 border border-gray-700 rounded focus:border-blue-500 focus:outline-none placeholder-gray-600'
+										/>
+									</th>
+									<th className='px-2 py-2'></th>
+								</tr>
 							</thead>
 							<tbody className='text-sm text-gray-200'>
-								{tasks.length === 0 && (
+								{loading && filteredTasks.length === 0 ? (
+									// Skeleton loading state
+									Array.from({ length: 5 }).map((_, idx) => (
+										<tr key={`skeleton-${idx}`} className='border-b border-gray-800'>
+											<td className='px-4 py-4'>
+												<div className='h-4 w-8 bg-gray-800 rounded animate-pulse'></div>
+											</td>
+											<td className='px-4 py-4'>
+												<div className='h-4 w-4 bg-gray-800 rounded animate-pulse'></div>
+											</td>
+											<td className='px-4 py-4'>
+												<div className='h-4 w-16 bg-gray-800 rounded animate-pulse'></div>
+											</td>
+											<td className='px-4 py-4'>
+												<div className='h-6 w-12 bg-gray-800 rounded animate-pulse'></div>
+											</td>
+											<td className='px-4 py-4'>
+												<div className='h-4 w-full bg-gray-800 rounded animate-pulse'></div>
+											</td>
+											<td className='px-4 py-4'>
+												<div className='h-4 w-32 bg-gray-800 rounded animate-pulse'></div>
+											</td>
+											<td className='px-4 py-4'>
+												<div className='h-4 w-20 bg-gray-800 rounded animate-pulse'></div>
+											</td>
+											<td className='px-4 py-4'>
+												<div className='h-4 w-24 bg-gray-800 rounded animate-pulse'></div>
+											</td>
+											<td className='px-4 py-4'>
+												<div className='h-4 w-12 bg-gray-800 rounded animate-pulse'></div>
+											</td>
+											<td className='px-4 py-4'>
+												<div className='h-4 w-20 bg-gray-800 rounded animate-pulse'></div>
+											</td>
+											<td className='px-4 py-4'>
+												<div className='h-4 w-20 bg-gray-800 rounded animate-pulse'></div>
+											</td>
+											<td className='px-4 py-4'>
+												<div className='flex gap-2 justify-end'>
+													<div className='h-8 w-8 bg-gray-800 rounded animate-pulse'></div>
+													<div className='h-8 w-8 bg-gray-800 rounded animate-pulse'></div>
+													<div className='h-8 w-8 bg-gray-800 rounded animate-pulse'></div>
+												</div>
+											</td>
+										</tr>
+									))
+								) : filteredTasks.length === 0 ? (
 									<tr>
 										<td
-											colSpan={11}
+											colSpan={12}
 											className='px-6 py-12 text-center text-gray-400'
 										>
-											{loading
-												? 'Загрузка задач...'
-												: 'Задачи не найдены. Добавьте первую задачу.'}
+											{tasks.length === 0
+												? 'Задачи не найдены. Добавьте первую задачу.'
+												: 'Нет задач, соответствующих фильтрам.'}
 										</td>
 									</tr>
+								) : groupBy === 'none' ? (
+									filteredTasks.map(task => (
+										<SortableRow
+											key={task.id}
+											task={task}
+											onEdit={onEdit}
+											onComplete={onComplete}
+											onDelete={onDelete}
+											onUpdate={onUpdate}
+										/>
+									))
+								) : (
+									Object.entries(groupedTasks).map(([groupKey, groupTasks]) => {
+										const isCollapsed = collapsedGroups.has(groupKey)
+										return (
+											<React.Fragment key={`group-${groupKey}`}>
+												<tr className='bg-gray-800/60 sticky top-[88px] z-[5] border-t-2 border-gray-700'>
+													<td colSpan={12} className='px-4 py-2'>
+														<button
+															onClick={() => toggleGroup(groupKey)}
+															className='flex items-center gap-2 text-sm font-semibold text-gray-200 hover:text-white transition w-full'
+														>
+															{isCollapsed ? (
+																<ChevronRight className='h-4 w-4' />
+															) : (
+																<ChevronDown className='h-4 w-4' />
+															)}
+															<span>{groupKey}</span>
+															<span className='text-xs text-gray-400 ml-2'>
+																({groupTasks.length}{' '}
+																{groupTasks.length === 1 ? 'задача' : 'задач'})
+															</span>
+														</button>
+													</td>
+												</tr>
+												{!isCollapsed &&
+													groupTasks.map(task => (
+														<SortableRow
+															key={task.id}
+															task={task}
+															onEdit={onEdit}
+															onComplete={onComplete}
+															onDelete={onDelete}
+															onUpdate={onUpdate}
+														/>
+													))}
+											</React.Fragment>
+										)
+									})
 								)}
-
-								{tasks.map(task => (
-									<SortableRow
-										key={task.id}
-										task={task}
-										onEdit={onEdit}
-										onComplete={onComplete}
-										onDelete={onDelete}
-										onUpdate={onUpdate}
-									/>
-								))}
 							</tbody>
 						</table>
 					</SortableContext>
@@ -241,6 +698,16 @@ function SortableRow({
 				</button>
 			</td>
 			<td className='px-4 py-3'>
+				<a
+					href={`https://crmwest.ru/company/personal/user/156/tasks/task/view/${task.id}/`}
+					target='_blank'
+					rel='noopener noreferrer'
+					className='text-blue-400 hover:text-blue-300 hover:underline font-mono text-xs'
+				>
+					{task.id}
+				</a>
+			</td>
+			<td className='px-4 py-3'>
 				<InlineSelect
 					value={task.metadata.abc ?? ''}
 					options={['A', 'B', 'C']}
@@ -268,9 +735,9 @@ function SortableRow({
 					)}
 					{task.tags.length > 0 && (
 						<div className='flex flex-wrap gap-1 pt-1'>
-							{task.tags.map(tag => (
+							{task.tags.map((tag, idx) => (
 								<span
-									key={tag}
+									key={`${task.id}-tag-${idx}-${tag}`}
 									className='rounded bg-gray-800 px-2 py-0.5 text-[11px] uppercase tracking-wide text-gray-400'
 								>
 									{tag}

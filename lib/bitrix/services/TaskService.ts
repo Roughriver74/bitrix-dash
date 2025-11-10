@@ -5,12 +5,23 @@ import { cache } from '@/lib/cache';
 
 export class TaskService {
   constructor(private client: BitrixClient) {}
-  
+
   // TTL для кеша тегов задач (1 час)
   private readonly TASK_TAGS_CACHE_TTL = 3600;
 
+  // TTL для кеша Scrum весов (2 часа - веса меняются редко)
+  private readonly SCRUM_WEIGHT_CACHE_TTL = 7200;
+
+  // Флаг для включения/выключения загрузки Scrum весов
+  // По умолчанию отключено для ускорения загрузки задач
+  // Включите через LOAD_SCRUM_WEIGHTS=true, если используете Scrum
+  private readonly LOAD_SCRUM_WEIGHTS = process.env.LOAD_SCRUM_WEIGHTS === 'true';
+
   async getAllTasks(userIds: string[]): Promise<{ activeTasks: BitrixTask[], completedTasks: BitrixTask[] }> {
+    console.log(`🔍 getAllTasks вызван для ${userIds.length} пользователей`);
+    
     if (userIds.length === 0) {
+      console.warn('⚠️ Список пользователей пуст');
       return { activeTasks: [], completedTasks: [] };
     }
     
@@ -19,32 +30,65 @@ export class TaskService {
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
     
     const userChunks = this.chunkArray(userIds, 10);
+    console.log(`📦 Разбито на ${userChunks.length} чанков по 10 пользователей`);
+    
     const allActiveTasks: BitrixTask[] = [];
     const allCompletedTasks: BitrixTask[] = [];
+    const taskIdsFromBitrix: string[] = [];
     
     for (const [index, chunk] of userChunks.entries()) {
       try {
         // Получаем активные задачи (исключаем завершенные и отложенные)
-        // Явно указываем поля, которые нужно получить, включая TAGS
-        const activeTasks = await this.client.getAllTasks(
+        // НЕ запрашиваем TAGS - они не приходят через tasks.task.list
+        console.log(`🔍 Запрашиваем активные задачи для чанка ${index + 1} (${chunk.length} пользователей)`);
+        
+        // Пробуем получить все задачи для пользователей, потом отфильтруем на нашей стороне
+        // Фильтр !STATUS может не работать в Bitrix API
+        const activeTasksRaw = await this.client.getAllTasks(
           {
             RESPONSIBLE_ID: chunk,
-            '!STATUS': [5, 6] // Исключаем завершенные (5) и отложенные (6)
           },
-          ['ID', 'TITLE', 'DESCRIPTION', 'RESPONSIBLE_ID', 'CREATED_BY', 'CREATED_DATE', 'CHANGED_DATE', 'CLOSED_DATE', 'DEADLINE', 'STATUS', 'PRIORITY', 'GROUP_ID', 'TAGS', 'UF_CRM_TASK']
+          ['ID', 'TITLE', 'DESCRIPTION', 'RESPONSIBLE_ID', 'CREATED_BY', 'CREATED_DATE', 'CHANGED_DATE', 'CLOSED_DATE', 'DEADLINE', 'STATUS', 'PRIORITY', 'GROUP_ID', 'UF_CRM_TASK']
         );
+        
+        // Фильтруем активные задачи на нашей стороне (исключаем завершенные (5) и отложенные (6))
+        const activeTasks = activeTasksRaw.filter((task: any) => {
+          const status = String(task.STATUS || task.status || '');
+          return status !== '5' && status !== '6';
+        });
+        
+        console.log(`📋 Чанк ${index + 1}: получено ${activeTasks.length} активных задач из Bitrix`);
+
+        if (activeTasks.length > 0) {
+          console.log(`📋 Пример первой задачи:`, {
+            ID: activeTasks[0].ID,
+            TITLE: activeTasks[0].TITLE?.substring(0, 50),
+            STATUS: activeTasks[0].STATUS,
+            RESPONSIBLE_ID: activeTasks[0].RESPONSIBLE_ID,
+          });
+        }
+
+        // Добавляем задачи без дедупликации (дедупликация будет в конце)
         allActiveTasks.push(...activeTasks);
+        taskIdsFromBitrix.push(...activeTasks.map(t => t.ID).filter(Boolean));
         
         // Получаем завершенные задачи за последние 30 дней
+        console.log(`🔍 Запрашиваем завершенные задачи для чанка ${index + 1} (с ${thirtyDaysAgo.toISOString()})`);
+        
         const completedTasks = await this.client.getAllTasks(
           {
             RESPONSIBLE_ID: chunk,
             STATUS: 5, // Только завершенные
             '>=CLOSED_DATE': thirtyDaysAgo.toISOString()
           },
-          ['ID', 'TITLE', 'DESCRIPTION', 'RESPONSIBLE_ID', 'CREATED_BY', 'CREATED_DATE', 'CHANGED_DATE', 'CLOSED_DATE', 'DEADLINE', 'STATUS', 'PRIORITY', 'GROUP_ID', 'TAGS', 'UF_CRM_TASK']
+          ['ID', 'TITLE', 'DESCRIPTION', 'RESPONSIBLE_ID', 'CREATED_BY', 'CREATED_DATE', 'CHANGED_DATE', 'CLOSED_DATE', 'DEADLINE', 'STATUS', 'PRIORITY', 'GROUP_ID', 'UF_CRM_TASK']
         );
+        
+        console.log(`📋 Чанк ${index + 1}: получено ${completedTasks.length} завершенных задач из Bitrix`);
+
+        // Добавляем задачи без дедупликации (дедупликация будет в конце)
         allCompletedTasks.push(...completedTasks);
+        taskIdsFromBitrix.push(...completedTasks.map(t => t.ID).filter(Boolean));
         
       } catch (error) {
         console.error(`❌ Ошибка при получении задач для группы ${index + 1}:`, error);
@@ -52,9 +96,29 @@ export class TaskService {
       }
     }
     
+    // Финальная дедупликация по всем задачам (единственная дедупликация)
+    console.log(`🔄 Дедупликация: было ${allActiveTasks.length} активных и ${allCompletedTasks.length} завершенных задач`);
+
+    const deduplicatedActiveTasks = Array.from(
+      new Map(allActiveTasks.filter(t => t.ID).map(t => [t.ID, t])).values()
+    );
+
+    const deduplicatedCompletedTasks = Array.from(
+      new Map(allCompletedTasks.filter(t => t.ID).map(t => [t.ID, t])).values()
+    );
+
+    console.log(`✅ После дедупликации: ${deduplicatedActiveTasks.length} активных и ${deduplicatedCompletedTasks.length} завершенных уникальных задач`);
+
+    console.log(`🔄 Начинаем обогащение данных: ${deduplicatedActiveTasks.length} активных, ${deduplicatedCompletedTasks.length} завершенных`);
+
     // Обогащаем данные для обеих групп
-    const enrichedActiveTasks = await this.enrichTasksData(allActiveTasks);
-    const enrichedCompletedTasks = await this.enrichTasksData(allCompletedTasks);
+    const enrichedActiveTasks = await this.enrichTasksData(deduplicatedActiveTasks);
+    console.log(`✅ Обогащено ${enrichedActiveTasks.length} активных задач`);
+
+    const enrichedCompletedTasks = await this.enrichTasksData(deduplicatedCompletedTasks);
+    console.log(`✅ Обогащено ${enrichedCompletedTasks.length} завершенных задач`);
+    
+    console.log(`🎯 Итого возвращаем: ${enrichedActiveTasks.length} активных, ${enrichedCompletedTasks.length} завершенных`);
     
     return {
       activeTasks: enrichedActiveTasks,
@@ -155,16 +219,7 @@ export class TaskService {
     const task = response?.task || response?.result?.task || response;
     const enriched = await this.enrichTasksData([task]);
     const result = enriched[0];
-    
-    // Сохраняем теги в кеш при создании задачи
-    if (result && result.TAGS) {
-      const cacheKey = `task:${result.ID}:tags`;
-      await cache.setex(cacheKey, this.TASK_TAGS_CACHE_TTL, {
-        TAGS: result.TAGS,
-        ID: result.ID,
-      });
-    }
-    
+
     return result;
   }
 
@@ -239,17 +294,7 @@ export class TaskService {
 
     const enriched = await this.enrichTasksData([task]);
     const result = enriched[0] ?? null;
-    
-    // Обновляем кеш тегов после обновления задачи
-    if (result) {
-      const cacheKey = `task:${taskId}:tags`;
-      const tagsToCache = result.TAGS || [];
-      await cache.setex(cacheKey, this.TASK_TAGS_CACHE_TTL, {
-        TAGS: tagsToCache,
-        ID: taskId,
-      });
-    }
-    
+
     return result;
   }
 
@@ -261,13 +306,6 @@ export class TaskService {
         TAGS: finalTags,
       },
     });
-    
-    // Обновляем кеш тегов
-    const cacheKey = `task:${taskId}:tags`;
-    await cache.setex(cacheKey, this.TASK_TAGS_CACHE_TTL, {
-      TAGS: finalTags,
-      ID: taskId,
-    });
   }
 
   async deleteTask(taskId: string): Promise<boolean> {
@@ -275,7 +313,9 @@ export class TaskService {
       taskId,
     });
 
-    return Boolean(result?.result ?? result);
+    const deleted = Boolean(result?.result ?? result);
+
+    return deleted;
   }
 
   async completeTask(taskId: string): Promise<boolean> {
@@ -291,33 +331,43 @@ export class TaskService {
    * @param taskId ID задачи
    * @returns Полная информация о задаче или null при ошибке
    */
-  private async getTaskWithTags(taskId: string): Promise<any | null> {
+  async getTaskWithTags(taskId: string): Promise<any | null> {
     // Проверяем кеш
     const cacheKey = `task:${taskId}:tags`;
     const cached = await cache.get(cacheKey);
-    if (cached) {
-      return cached;
+    if (cached && cached.TAGS) {
+      return {
+        TAGS: cached.TAGS,
+        ID: cached.ID || taskId,
+      };
     }
-    
+
+    // Если нет в кеше - запрашиваем из Bitrix
     try {
       const response = await this.client.call<any>('tasks.task.get', {
         taskId,
       });
-      
+
       // Извлекаем задачу из ответа
       const task = response?.task || response?.result?.task || response;
       if (!task) {
         return null;
       }
-      
-      // Сохраняем в кеш только теги для экономии места
+
+      // Извлекаем теги
       const tags = task.TAGS || task.tags || [];
+
+      // Сохраняем в кеш
       await cache.setex(cacheKey, this.TASK_TAGS_CACHE_TTL, {
         TAGS: tags,
         ID: task.ID || taskId,
       });
-      
-      return task;
+
+      // Возвращаем структуру с тегами
+      return {
+        TAGS: tags,
+        ID: task.ID || taskId,
+      };
     } catch (error) {
       console.error(`❌ Ошибка при получении задачи ${taskId}:`, error);
       return null;
@@ -325,107 +375,212 @@ export class TaskService {
   }
 
   /**
-   * Получает вес задачи из Scrum (storyPoints)
+   * Загружает теги для списка задач через batch API
+   * @param tasks Список задач
+   * @returns Map с тегами по ID задачи
+   */
+  private async loadTaskTagsBatch(tasks: BitrixTask[]): Promise<Map<string, string[]>> {
+    const tagsMap = new Map<string, string[]>();
+
+    if (tasks.length === 0) {
+      return tagsMap;
+    }
+
+    // Batch API принимает максимум 50 команд за раз
+    const batchSize = 50;
+    const taskChunks: BitrixTask[][] = [];
+
+    for (let i = 0; i < tasks.length; i += batchSize) {
+      taskChunks.push(tasks.slice(i, i + batchSize));
+    }
+
+    console.log(`📦 Загрузка тегов через batch API: ${taskChunks.length} батчей по ${batchSize} задач`);
+
+    for (const [chunkIndex, chunk] of taskChunks.entries()) {
+      try {
+        // Формируем команды для batch запроса
+        const commands: Record<string, string> = {};
+
+        chunk.forEach((task: any) => {
+          const taskId = task.ID || task.id;
+          if (taskId) {
+            // Используем tasks.task.get для получения полной информации включая теги
+            commands[`task_${taskId}`] = `tasks.task.get?taskId=${taskId}&select[]=TAGS`;
+          }
+        });
+
+        if (Object.keys(commands).length === 0) {
+          continue;
+        }
+
+        console.log(`🔄 Batch ${chunkIndex + 1}/${taskChunks.length}: запрос ${Object.keys(commands).length} задач`);
+
+        const batchResults = await this.client.batch(commands);
+
+        // Обрабатываем результаты
+        for (const [key, result] of Object.entries(batchResults.result || {})) {
+          try {
+            const taskData = (result as any)?.task || (result as any);
+            if (taskData) {
+              const taskId = taskData.id || taskData.ID;
+              let tags: string[] = [];
+
+              // Извлекаем теги из различных возможных мест
+              // Bitrix возвращает теги в формате: { "507": { "id": 507, "title": "abc:A" } }
+              let rawTags: any[] = [];
+
+              if (Array.isArray(taskData.tags)) {
+                rawTags = taskData.tags;
+              } else if (Array.isArray(taskData.TAGS)) {
+                rawTags = taskData.TAGS;
+              } else if (taskData.tags && typeof taskData.tags === 'object') {
+                rawTags = Object.values(taskData.tags);
+              } else if (taskData.TAGS && typeof taskData.TAGS === 'object') {
+                rawTags = Object.values(taskData.TAGS);
+              }
+
+              // Нормализуем теги - извлекаем title из объектов или конвертируем в строки
+              tags = rawTags
+                .map(t => {
+                  // Если тег - объект с полем title (формат Bitrix: {id: 507, title: "abc:A"})
+                  if (t && typeof t === 'object' && t.title) {
+                    return String(t.title).trim();
+                  }
+                  // Если тег - примитивное значение (строка или число)
+                  const type = typeof t;
+                  if ((type === 'string' || type === 'number') && t !== null && t !== undefined) {
+                    return String(t).trim();
+                  }
+                  return null;
+                })
+                .filter((t): t is string => t !== null && t.length > 0);
+
+              if (taskId && tags.length > 0) {
+                tagsMap.set(String(taskId), tags);
+
+                // Сохраняем в кеш для будущих запросов
+                const cacheKey = `task:${taskId}:tags`;
+                await cache.setex(cacheKey, this.TASK_TAGS_CACHE_TTL, {
+                  TAGS: tags,
+                  ID: taskId,
+                }).catch(() => {}); // Игнорируем ошибки кеша
+              }
+            }
+          } catch (err) {
+            // Игнорируем ошибки парсинга отдельных задач
+            console.warn(`⚠️ Ошибка обработки результата для ${key}:`, err);
+          }
+        }
+
+        console.log(`✅ Batch ${chunkIndex + 1}/${taskChunks.length}: загружено тегов для ${Object.keys(batchResults.result || {}).length} задач`);
+
+      } catch (error) {
+        console.error(`❌ Ошибка при загрузке batch ${chunkIndex + 1}:`, error);
+        // Продолжаем со следующим батчем
+      }
+    }
+
+    return tagsMap;
+  }
+
+  /**
+   * Получает вес задачи из Scrum (storyPoints) с кешированием
    * @param taskId ID задачи
    * @returns Вес задачи (storyPoints) или null, если задача не в Scrum или вес не задан
    */
   private async getScrumTaskWeight(taskId: string): Promise<number | null> {
+    // Проверяем кеш
+    const cacheKey = `scrum:weight:${taskId}`;
+    const cached = await cache.get(cacheKey);
+    if (cached !== null && cached !== undefined) {
+      return cached as number | null;
+    }
+
     try {
       const scrumData = await this.client.call<any>('tasks.api.scrum.task.get', {
         taskId,
-      });
-      
+      }, { silent: true }); // Не логируем ошибки - Scrum может быть недоступен
+
       // Проверяем различные варианты структуры ответа
-      const storyPoints = scrumData?.storyPoints 
-        || scrumData?.result?.storyPoints 
+      const storyPoints = scrumData?.storyPoints
+        || scrumData?.result?.storyPoints
         || scrumData?.task?.storyPoints
         || scrumData?.data?.storyPoints;
-      
+
+      let weight: number | null = null;
+
       if (storyPoints !== undefined && storyPoints !== null) {
-        const weight = Number(storyPoints);
-        if (Number.isFinite(weight) && weight >= 0) {
-          return weight;
+        const parsed = Number(storyPoints);
+        if (Number.isFinite(parsed) && parsed >= 0) {
+          weight = parsed;
         }
       }
-      
-      return null;
+
+      // Кешируем результат (даже если null - чтобы не делать лишние запросы)
+      await cache.setex(cacheKey, this.SCRUM_WEIGHT_CACHE_TTL, weight);
+
+      return weight;
     } catch (error) {
-      // Если задача не в Scrum или произошла ошибка, возвращаем null
-      // Не логируем ошибку, так как это нормально для обычных задач
+      // Если задача не в Scrum или произошла ошибка, кешируем null
+      await cache.setex(cacheKey, this.SCRUM_WEIGHT_CACHE_TTL, null);
       return null;
     }
   }
 
   private async enrichTasksData(tasks: BitrixTask[]): Promise<BitrixTask[]> {
+    console.log(`🔄 enrichTasksData вызван для ${tasks.length} задач`);
+
+    if (tasks.length === 0) {
+      console.warn('⚠️ enrichTasksData: список задач пуст');
+      return [];
+    }
+
     const enrichedTasks: BitrixTask[] = [];
     const now = new Date();
-    
-    // Сначала проверяем, какие задачи нуждаются в получении тегов
-    // tasks.task.list не возвращает теги, поэтому нужно получать их через tasks.task.get
-    const tasksNeedingTags = new Map<string, any>();
+
+    // Загружаем теги через batch API (tasks.task.list не возвращает теги)
+    const tagsMap = await this.loadTaskTagsBatch(tasks);
+    console.log(`🏷️ Загружено тегов для ${tagsMap.size} задач`);
+
     const scrumWeightsMap = new Map<string, number | null>();
-    
-    // Проверяем задачи на наличие тегов
-    for (const task of tasks) {
-      const taskAny = task as any;
-      const taskId = taskAny.id || taskAny.ID;
-      if (!taskId) continue;
-      
-      // Проверяем, есть ли теги в задаче
-      const hasTags = taskAny.TAGS && Array.isArray(taskAny.TAGS) && taskAny.TAGS.length > 0;
-      
-      // Если тегов нет, добавляем в очередь для получения через tasks.task.get
-      if (!hasTags) {
-        tasksNeedingTags.set(taskId, taskAny);
-      }
-    }
-    
-    // Получаем теги для задач, которым они нужны (батчами по 10)
-    const batchSize = 10;
-    const taskIdsNeedingTags = Array.from(tasksNeedingTags.keys());
-    
-    if (taskIdsNeedingTags.length > 0) {
-      console.log(`📋 Получаем теги для ${taskIdsNeedingTags.length} задач через tasks.task.get (батчами по ${batchSize})`);
-      
-      for (let i = 0; i < taskIdsNeedingTags.length; i += batchSize) {
-        const batch = taskIdsNeedingTags.slice(i, i + batchSize);
-        const batchPromises = batch.map(async (taskId) => {
-          const taskWithTags = await this.getTaskWithTags(taskId);
-          if (taskWithTags && taskWithTags.TAGS) {
-            // Обновляем задачу тегами из кеша/API
-            const originalTask = tasksNeedingTags.get(taskId);
-            if (originalTask) {
-              originalTask.TAGS = taskWithTags.TAGS;
-            }
-          }
-        });
-        
-        // Ждем завершения текущего батча перед следующим
-        await Promise.allSettled(batchPromises);
-      }
-      
-      console.log(`✅ Теги получены для ${taskIdsNeedingTags.length} задач`);
-    }
-    
-    // Получаем Scrum-веса для задач, которые могут быть в Scrum
-    // Ограничиваем количество параллельных запросов до 10 для избежания перегрузки API
-    for (let i = 0; i < tasks.length; i += batchSize) {
-      const batch = tasks.slice(i, i + batchSize);
-      const batchPromises = batch.map(async (task) => {
-        const taskAny = task as any;
-        const taskId = taskAny.id || taskAny.ID;
-        // Пробуем получить вес из Scrum для всех задач
-        // Если задача не в Scrum, метод вернет null без ошибки
-        if (taskId) {
-          const weight = await this.getScrumTaskWeight(taskId);
-          if (weight !== null) {
-            scrumWeightsMap.set(taskId, weight);
-          }
-        }
+
+    // Получаем Scrum-веса только если включена загрузка И задача в проекте 52
+    if (this.LOAD_SCRUM_WEIGHTS) {
+      // Фильтруем только задачи из проекта 52 (Scrum проект)
+      const scrumProjectTasks = tasks.filter((task: any) => {
+        const groupId = String(task.GROUP_ID || task.groupId || '');
+        return groupId === '52';
       });
-      
-      // Ждем завершения текущего батча перед следующим
-      await Promise.allSettled(batchPromises);
+
+      if (scrumProjectTasks.length > 0) {
+        // Ограничиваем количество параллельных запросов до 10 для избежания перегрузки API
+        const batchSize = 10;
+        console.log(`📊 Загрузка Scrum-весов включена. Обрабатываем ${scrumProjectTasks.length} задач из проекта 52 (батчами по ${batchSize})`);
+
+        for (let i = 0; i < scrumProjectTasks.length; i += batchSize) {
+          const batch = scrumProjectTasks.slice(i, i + batchSize);
+          const batchPromises = batch.map(async (task) => {
+            const taskAny = task as any;
+            const taskId = taskAny.id || taskAny.ID;
+            // Пробуем получить вес из Scrum (сначала из кеша, потом из API)
+            // Если задача не в Scrum, метод вернет null и закеширует результат
+            if (taskId) {
+              const weight = await this.getScrumTaskWeight(taskId);
+              if (weight !== null) {
+                scrumWeightsMap.set(taskId, weight);
+              }
+            }
+          });
+
+          // Ждем завершения текущего батча перед следующим
+          await Promise.allSettled(batchPromises);
+        }
+        console.log(`✅ Загружено ${scrumWeightsMap.size} Scrum-весов из ${scrumProjectTasks.length} задач проекта 52`);
+      } else {
+        console.log(`⏭️ Нет задач из проекта 52 для загрузки Scrum-весов`);
+      }
+    } else {
+      console.log(`⏭️ Загрузка Scrum-весов отключена (LOAD_SCRUM_WEIGHTS=false или не задано)`);
     }
     
     // Быстрое обогащение без истории - используем только CHANGED_DATE
@@ -433,60 +588,12 @@ export class TaskService {
       // Маппинг полей из camelCase в UPPER_CASE для совместимости
       const taskAny = task as any;
       
-      // Обработка тегов - они могут приходить в разных форматах из Bitrix API
-      let tags: string[] = [];
-      
-      // Bitrix API может возвращать теги в разных местах и форматах
-      // Проверяем различные варианты структуры ответа
-      let tagsSource: any = null;
-      
-      // Вариант 1: Прямое поле TAGS
-      if (taskAny.TAGS !== undefined) {
-        tagsSource = taskAny.TAGS;
-      }
-      // Вариант 2: Поле tags (camelCase)
-      else if (taskAny.tags !== undefined) {
-        tagsSource = taskAny.tags;
-      }
-      // Вариант 3: Вложенная структура (если задача приходит как объект с полем task)
-      else if (taskAny.task?.TAGS !== undefined) {
-        tagsSource = taskAny.task.TAGS;
-      }
-      else if (taskAny.task?.tags !== undefined) {
-        tagsSource = taskAny.task.tags;
-      }
-      
-      if (tagsSource) {
-        if (Array.isArray(tagsSource)) {
-          // Если это массив, обрабатываем каждый элемент
-          tags = tagsSource
-            .map((tag: any) => {
-              // Если тег - объект, извлекаем значение
-              if (typeof tag === 'object' && tag !== null) {
-                return tag.NAME || tag.name || tag.VALUE || tag.value || tag.TITLE || tag.title || String(tag);
-              }
-              // Если тег - строка, используем её
-              return String(tag).trim();
-            })
-            .filter((tag: string) => tag && tag.length > 0);
-        } else if (typeof tagsSource === 'string') {
-          // Если теги приходят как строка, разделяем по запятой
-          tags = tagsSource.split(',').map((t: string) => t.trim()).filter(Boolean);
-        }
-      }
-      
+      // Получаем ID задачи
       const taskId = taskAny.id || taskAny.ID;
-      
-      // Если теги все еще пустые после попытки получить через tasks.task.get,
-      // проверяем кеш еще раз (на случай если они были получены в другом батче)
-      if (tags.length === 0 && taskId) {
-        const cacheKey = `task:${taskId}:tags`;
-        const cached = await cache.get(cacheKey);
-        if (cached && cached.TAGS && Array.isArray(cached.TAGS) && cached.TAGS.length > 0) {
-          tags = cached.TAGS;
-        }
-      }
-      
+
+      // Получаем теги из загруженной Map (теги загружены через batch API)
+      let tags: string[] = tagsMap.get(String(taskId)) || [];
+
       // Проверяем, есть ли вес из Scrum для этой задачи
       const scrumWeight = scrumWeightsMap.get(taskId);
       
@@ -526,10 +633,20 @@ export class TaskService {
       
       // Используем CHANGED_DATE для определения последней активности
       const lastActivity = mappedTask.CHANGED_DATE || mappedTask.CREATED_DATE;
-      const lastActivityDate = new Date(lastActivity);
-      const inactiveDays = Math.floor(
-        (now.getTime() - lastActivityDate.getTime()) / (1000 * 60 * 60 * 24)
-      );
+      
+      let inactiveDays = 0;
+      if (lastActivity) {
+        try {
+          const lastActivityDate = new Date(lastActivity);
+          if (!isNaN(lastActivityDate.getTime())) {
+            inactiveDays = Math.floor(
+              (now.getTime() - lastActivityDate.getTime()) / (1000 * 60 * 60 * 24)
+            );
+          }
+        } catch (error) {
+          console.warn(`⚠️ Ошибка при обработке даты для задачи ${taskId}:`, error);
+        }
+      }
       
       // Определяем, находится ли задача в работе (STATUS = '3')
       const isInProgress = mappedTask.STATUS === '3' || String(mappedTask.STATUS) === '3';
@@ -557,6 +674,8 @@ export class TaskService {
         executionStartDate
       });
     }
+    
+    console.log(`✅ enrichTasksData: обработано ${enrichedTasks.length} задач из ${tasks.length} входных`);
     
     // Если нужна детальная история, можно запросить ее позже только для видимых задач
     return enrichedTasks;

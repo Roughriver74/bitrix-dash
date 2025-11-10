@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Plus, RefreshCw } from 'lucide-react'
 import { TaskForm, TaskFormValues } from '@/components/tasks/TaskForm'
 import { TaskTable } from '@/components/tasks/TaskTable'
+import { ErrorBoundary } from '@/components/ErrorBoundary'
 import {
 	TaskFormMode,
 	TaskListItem,
@@ -20,6 +21,14 @@ interface TasksResponse {
 }
 
 export default function TasksPage() {
+	return (
+		<ErrorBoundary>
+			<TasksPageContent />
+		</ErrorBoundary>
+	)
+}
+
+function TasksPageContent() {
 	const [tasks, setTasks] = useState<TaskListItem[]>([])
 	const [users, setUsers] = useState<UserOption[]>([])
 	const [departmentName, setDepartmentName] = useState<string>('')
@@ -43,6 +52,7 @@ export default function TasksPage() {
 			setTasks(sortByOrder(data.tasks))
 			setUsers(data.users)
 			setDepartmentName(data.department?.name ?? '')
+			
 		} catch (err) {
 			console.error(err)
 			setError(
