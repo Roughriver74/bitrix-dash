@@ -5,6 +5,7 @@ export interface TaskMetadata {
 	abc?: string | null
 	impact?: string | null
 	system?: string | null
+	p?: string | null // Приоритет P0-P3
 	weight?: number | null
 }
 
@@ -13,6 +14,7 @@ const TAG_PREFIXES = {
 	abc: 'abc:',
 	impact: 'impact:',
 	system: 'system:',
+	p: 'p:', // Приоритет P0-P3
 	weight: 'weight:',
 } as const
 
@@ -63,6 +65,15 @@ export function parseTaskMetadata(tags: string[] = []): {
 			return
 		}
 
+		if (lowerTag.startsWith(TAG_PREFIXES.p)) {
+			const value = tag.slice(TAG_PREFIXES.p.length).trim().toUpperCase()
+			// Валидация: только P0, P1, P2, P3
+			if (['P0', 'P1', 'P2', 'P3'].includes(value)) {
+				metadata.p = value
+			}
+			return
+		}
+
 		if (lowerTag.startsWith(TAG_PREFIXES.weight)) {
 			const value = tag.slice(TAG_PREFIXES.weight.length).trim()
 			const numeric = Number(value)
@@ -93,6 +104,10 @@ export function buildMetadataTags(metadata: TaskMetadata = {}): string[] {
 
 	if (metadata.system) {
 		tags.push(`${TAG_PREFIXES.system}${metadata.system}`)
+	}
+
+	if (metadata.p) {
+		tags.push(`${TAG_PREFIXES.p}${metadata.p}`)
 	}
 
 	if (metadata.weight != null) {

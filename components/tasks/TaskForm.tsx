@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { TaskMetadata } from '@/lib/tasks/metadata';
 import { TaskFormMode, TaskListItem, UserOption } from '@/components/tasks/types';
 import { X } from 'lucide-react';
+import { PRIORITY_LEVELS } from '@/lib/tasks/priorities';
 
 export interface TaskFormValues {
   title: string;
@@ -49,7 +50,7 @@ export function TaskForm({
     manualPriority: task?.metadata.manualPriority ?? null,
     abc: task?.metadata.abc ?? null,
     impact: task?.metadata.impact ?? null,
-    system: task?.metadata.system ?? null,
+    p: task?.metadata.p ?? null,
     weight: task?.metadata.weight ?? null,
   };
 
@@ -78,7 +79,7 @@ export function TaskForm({
         manualPriority: task?.metadata.manualPriority ?? null,
         abc: task?.metadata.abc ?? null,
         impact: task?.metadata.impact ?? null,
-        system: task?.metadata.system ?? null,
+        p: task?.metadata.p ?? null,
         weight: task?.metadata.weight ?? null,
       });
       setOtherTags((task?.otherTags ?? []).join(', '));
@@ -293,7 +294,7 @@ export function TaskForm({
 
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-300">
-                  Система / продукт
+                  Система (продукт)
                 </label>
                 <input
                   type="text"
@@ -305,8 +306,31 @@ export function TaskForm({
                     }))
                   }
                   className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-white focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                  placeholder="Например, Bitrix24, CRM, 1C"
+                  placeholder="Например, CRM, Битрикс24"
                 />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-300">
+                  Приоритет (P0-P3)
+                </label>
+                <select
+                  value={metadata.p ?? ''}
+                  onChange={(event) =>
+                    setMetadata((current) => ({
+                      ...current,
+                      p: event.target.value || null,
+                    }))
+                  }
+                  className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-white focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                >
+                  <option value="">Не задано</option>
+                  {PRIORITY_LEVELS.map((level) => (
+                    <option key={level} value={level}>
+                      {level}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               {mode === 'edit' && (

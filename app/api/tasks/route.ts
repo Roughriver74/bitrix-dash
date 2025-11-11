@@ -431,6 +431,7 @@ function prepareTasksPayload(tasks: BitrixTask[], usersMap: UsersMap) {
         abc: extended.metadata.abc ?? null,
         impact: extended.metadata.impact ?? null,
         system: extended.metadata.system ?? null,
+        p: extended.metadata.p ?? null,
         weight: extended.metadata.weight ?? null,
       },
       tags: Array.isArray(extended.TAGS) ? extended.TAGS : [],
@@ -454,10 +455,12 @@ async function reorderTasks(
   taskService: TaskService,
   tasks: ReorderPayload['tasks'],
 ) {
+  // Drag-drop only affects visual order on the page, NOT manualPriority
+  // manualPriority and P0-P3 priority remain unchanged
   for (const item of tasks) {
     const metadata: TaskMetadata = {
       ...(item.metadata ?? {}),
-      manualPriority: item.order,
+      // DO NOT update manualPriority here - it should remain unchanged
     };
     await taskService.updateTaskTags(item.id, item.otherTags ?? [], metadata);
   }

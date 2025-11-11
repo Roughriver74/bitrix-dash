@@ -516,13 +516,95 @@ export class TaskService {
         }
       }
 
-      // Кешируем результат (даже если null - чтобы не делать лишние запросы)
+      // Кешируем результат (даже если null - чтобы не делать лишние запросов)
       await cache.setex(cacheKey, this.SCRUM_WEIGHT_CACHE_TTL, weight);
 
       return weight;
     } catch (error) {
       // Если задача не в Scrum или произошла ошибка, кешируем null
       await cache.setex(cacheKey, this.SCRUM_WEIGHT_CACHE_TTL, null);
+      return null;
+    }
+  }
+
+  /**
+   * Получает название Epic для Scrum задачи с кешированием
+   * @param taskId ID задачи
+   * @returns Название Epic или null
+   */
+  private async getScrumTaskEpic(taskId: string): Promise<string | null> {
+    const cacheKey = `scrum:epic:${taskId}`;
+    const cached = await cache.get(cacheKey);
+    if (cached !== null && cached !== undefined) {
+      return cached as string | null;
+    }
+
+    try {
+      const scrumData = await this.client.call<any>('tasks.api.scrum.task.get', {
+        taskId,
+      }, { silent: true });
+
+      // Проверяем различные варианты структуры ответа для Epic
+      const epic = scrumData?.epic
+        || scrumData?.result?.epic
+        || scrumData?.task?.epic
+        || scrumData?.data?.epic
+        || scrumData?.epicName
+        || scrumData?.result?.epicName;
+
+      let epicName: string | null = null;
+
+      if (epic) {
+        // Epic может быть объектом с полем name или просто строкой
+        if (typeof epic === 'object' && epic.name) {
+          epicName = String(epic.name).trim();
+        } else if (typeof epic === 'string') {
+          epicName = epic.trim();
+        }
+      }
+
+      await cache.setex(cacheKey, this.SCRUM_WEIGHT_CACHE_TTL, epicName);
+      return epicName;
+    } catch (error) {
+      await cache.setex(cacheKey, this.SCRUM_WEIGHT_CACHE_TTL, null);
+      return null;
+    }
+  }
+
+  /**
+   * Получает название проекта/группы с кешированием
+   * @param groupId ID группы/проекта
+   * @returns Название группы или null
+   */
+  private async getGroupName(groupId: string): Promise<string | null> {
+    if (!groupId || groupId === '0') {
+      return null;
+    }
+
+    const cacheKey = `group:name:${groupId}`;
+    const cached = await cache.get(cacheKey);
+    if (cached !== null && cached !== undefined) {
+      return cached as string | null;
+    }
+
+    try {
+      // Используем sonet_group.get для получения информации о группе
+      const groupData = await this.client.call<any>('sonet_group.get', {
+        ID: groupId,
+      }, { silent: true });
+
+      const name = groupData?.NAME
+        || groupData?.result?.NAME
+        || groupData?.name
+        || groupData?.result?.name;
+
+      const groupName: string | null = name ? String(name).trim() : null;
+
+      // Кешируем на долгое время - названия проектов меняются редко
+      await cache.setex(cacheKey, 86400, groupName); // 24 часа
+      return groupName;
+    } catch (error) {
+      await cache.setex(cacheKey, 86400, null);
       return null;
     }
   }
@@ -562,8 +644,7 @@ export class TaskService {
           const batchPromises = batch.map(async (task) => {
             const taskAny = task as any;
             const taskId = taskAny.id || taskAny.ID;
-            // Пробуем получить вес из Scrum (сначала из кеша, потом из API)
-            // Если задача не в Scrum, метод вернет null и закеширует результат
+
             if (taskId) {
               const weight = await this.getScrumTaskWeight(taskId);
               if (weight !== null) {
@@ -596,7 +677,7 @@ export class TaskService {
 
       // Проверяем, есть ли вес из Scrum для этой задачи
       const scrumWeight = scrumWeightsMap.get(taskId);
-      
+
       // Если есть вес из Scrum и его еще нет в тегах, добавляем его
       if (scrumWeight !== undefined && scrumWeight !== null) {
         // Проверяем, есть ли уже вес в тегах
@@ -604,13 +685,15 @@ export class TaskService {
           const lowerTag = String(tag).toLowerCase().trim();
           return lowerTag.startsWith('weight:');
         });
-        
+
         // Если веса в тегах нет, добавляем его
         if (!hasWeightInTags) {
           tags.push(`weight:${scrumWeight}`);
         }
       }
-      
+
+      // Приоритеты P0-P3 определяются пользователем вручную через теги p:P0, p:P1, p:P2, p:P3
+
       const mappedTask: BitrixTask = {
         ID: taskId,
         TITLE: taskAny.title || taskAny.TITLE || 'Без названия',

@@ -21,6 +21,7 @@ import { GripVertical, Check, Edit, Trash2, X, ChevronDown, ChevronRight, BarCha
 import clsx from 'clsx'
 import React, { useState, useRef, useEffect, useMemo } from 'react'
 import { TaskListItem } from '@/components/tasks/types'
+import { PRIORITY_LEVELS, getPriorityClass } from '@/lib/tasks/priorities'
 
 type GroupBy = 'none' | 'abc' | 'status' | 'responsible' | 'impact'
 
@@ -45,6 +46,7 @@ interface TaskTableProps {
 				abc?: string | null
 				impact?: string | null
 				system?: string | null
+				p?: string | null
 				weight?: number | null
 			}
 			otherTags?: string[]
@@ -66,6 +68,7 @@ export function TaskTable({
 		status: '',
 		impact: '',
 		system: '',
+		p: '',
 		responsibleName: '',
 	})
 	const [hideRequests, setHideRequests] = useState(false)
@@ -96,6 +99,7 @@ export function TaskTable({
 				!task.metadata.system?.toLowerCase().includes(filters.system.toLowerCase())
 			)
 				return false
+			if (filters.p && task.metadata.p !== filters.p) return false
 			if (
 				filters.responsibleName &&
 				!task.responsibleName?.toLowerCase().includes(filters.responsibleName.toLowerCase())
@@ -115,6 +119,7 @@ export function TaskTable({
 			status: '',
 			impact: '',
 			system: '',
+			p: '',
 			responsibleName: '',
 		})
 		setHideRequests(false)
@@ -138,14 +143,10 @@ export function TaskTable({
 		// Перемещаем в отфильтрованном списке
 		const reorderedFiltered = arrayMove(filteredTasks, oldIndex, newIndex)
 
-		// Обновляем порядок только для отфильтрованных задач
+		// Обновляем только визуальный порядок (order), НЕ трогая manualPriority
 		const reordered = reorderedFiltered.map((task, index) => ({
 			...task,
 			order: index + 1,
-			metadata: {
-				...task.metadata,
-				manualPriority: index + 1,
-			},
 		}))
 
 		// Объединяем с неотфильтрованными задачами, сохраняя их порядок
@@ -559,7 +560,8 @@ export function TaskTable({
 									<th className='w-32 px-4 py-3'>Дедлайн</th>
 									<th className='w-20 px-4 py-3'>Вес</th>
 									<th className='w-36 px-4 py-3'>Влияние</th>
-									<th className='w-36 px-4 py-3'>Система</th>
+									<th className='w-32 px-4 py-3'>Система</th>
+									<th className='w-24 px-4 py-3'>Приоритет</th>
 									<th className='w-32 px-4 py-3 text-right'>Действия</th>
 								</tr>
 								<tr className='bg-gray-800/90 border-t border-gray-700'>
@@ -653,6 +655,22 @@ export function TaskTable({
 											}
 											className='w-full px-2 py-1 text-xs bg-gray-900 text-gray-300 border border-gray-700 rounded focus:border-blue-500 focus:outline-none placeholder-gray-600'
 										/>
+									</th>
+									<th className='px-2 py-2'>
+										<select
+											value={filters.p}
+											onChange={e =>
+												setFilters(prev => ({ ...prev, p: e.target.value }))
+											}
+											className='w-full px-2 py-1 text-xs bg-gray-900 text-gray-300 border border-gray-700 rounded focus:border-blue-500 focus:outline-none'
+										>
+											<option value=''>Все</option>
+											{PRIORITY_LEVELS.map(level => (
+												<option key={level} value={level}>
+													{level}
+												</option>
+											))}
+										</select>
 									</th>
 									<th className='px-2 py-2'></th>
 								</tr>
@@ -796,6 +814,7 @@ interface SortableRowProps {
 				abc?: string | null
 				impact?: string | null
 				system?: string | null
+				p?: string | null
 				weight?: number | null
 			}
 			otherTags?: string[]
@@ -975,6 +994,22 @@ function SortableRow({
 							},
 						})
 					}}
+					placeholder='—'
+				/>
+			</td>
+			<td className={clsx(cellPadding, 'text-sm text-gray-300')}>
+				<InlineSelect
+					value={task.metadata.p ?? ''}
+					options={PRIORITY_LEVELS as unknown as string[]}
+					onChange={value => {
+						onUpdate?.(task.id, {
+							metadata: {
+								...task.metadata,
+								p: value || null,
+							},
+						})
+					}}
+					className={getPriorityClass(task.metadata.p)}
 					placeholder='—'
 				/>
 			</td>
