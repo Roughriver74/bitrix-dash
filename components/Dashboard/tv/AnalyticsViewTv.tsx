@@ -185,13 +185,55 @@ function DistributionBar({ label, value, total, color }: { label: string; value:
 
 function ProductivityRanking({ data }: any) {
   const userStats = data.users.map((user: any) => {
-    const completed = data.completedTasks.filter((t: any) => t.RESPONSIBLE_ID === user.id).length;
-    const active = data.tasks.filter((t: any) => t.RESPONSIBLE_ID === user.id).length;
-    const overdue = data.tasks.filter((t: any) => t.RESPONSIBLE_ID === user.id && t.isOverdue).length;
-    
-    const score = completed * 10 - overdue * 5 + (active > 0 ? 5 : 0);
-    
-    return { ...user, completed, active, overdue, score };
+    const userCompletedTasks = data.completedTasks.filter((t: any) => t.RESPONSIBLE_ID === user.id);
+    const userActiveTasks = data.tasks.filter((t: any) => t.RESPONSIBLE_ID === user.id);
+    const userOverdueTasks = userActiveTasks.filter((t: any) => t.isOverdue);
+
+    const completed = userCompletedTasks.length;
+    const active = userActiveTasks.length;
+    const overdue = userOverdueTasks.length;
+
+    // Рейтинг = (Базовый результат + Бонус за сложность) × Качество + Бонус за эффективность
+
+    // 1. Базовый результат → Сумма Story Points завершенных задач
+    const baseResult = userCompletedTasks.reduce((sum: number, task: any) => {
+      const weight = task.metadata?.weight || task.weight || 1; // Story Points
+      return sum + weight;
+    }, 0);
+
+    // 2. Бонус за сложность → Доплата за сложные задачи (8+ SP)
+    const complexTasks = userCompletedTasks.filter((t: any) => {
+      const weight = t.metadata?.weight || t.weight || 0;
+      return weight >= 8;
+    });
+    const complexityBonus = complexTasks.length * 10; // +10 баллов за каждую сложную задачу
+
+    // 3. Коэффициент качества → Снижение за просрочки (0.7-1.0)
+    let qualityCoefficient = 1.0;
+    if (completed > 0) {
+      const overdueRate = overdue / (completed + active); // % просроченных от всех задач
+      qualityCoefficient = Math.max(0.7, 1.0 - (overdueRate * 0.3));
+    }
+
+    // 4. Бонус за эффективность → Премия за высокое качество (90%+)
+    let efficiencyBonus = 0;
+    if (qualityCoefficient >= 0.9 && baseResult > 0) {
+      efficiencyBonus = baseResult * 0.1; // +10% от базового результата
+    }
+
+    // Итоговый рейтинг
+    const score = Math.round((baseResult + complexityBonus) * qualityCoefficient + efficiencyBonus);
+
+    return {
+      ...user,
+      completed,
+      active,
+      overdue,
+      score,
+      storyPoints: baseResult,
+      complexTasks: complexTasks.length,
+      quality: Math.round(qualityCoefficient * 100)
+    };
   }).sort((a: any, b: any) => b.score - a.score);
 
   return (
@@ -209,23 +251,40 @@ function ProductivityRanking({ data }: any) {
           </div>
           <div className="flex-1">
             <h4 className="font-semibold text-white text-base">{user.NAME}</h4>
-            <div className="flex gap-3 text-xs text-gray-400">
-              <span className="text-green-400">
-                <CheckCircle className="inline h-3 w-3 mr-1" />
-                {user.completed}
-              </span>
-              <span className="text-blue-400">
-                Активных: {user.active}
-              </span>
-              {user.overdue > 0 && (
-                <span className="text-red-400">
-                  Просрочено: {user.overdue}
+            <div className="space-y-1">
+              <div className="flex gap-3 text-xs text-gray-400">
+                <span className="text-green-400">
+                  <CheckCircle className="inline h-3 w-3 mr-1" />
+                  {user.completed}
                 </span>
-              )}
+                <span className="text-blue-400">
+                  SP: {user.storyPoints}
+                </span>
+                {user.complexTasks > 0 && (
+                  <span className="text-purple-400">
+                    Сложных: {user.complexTasks}
+                  </span>
+                )}
+              </div>
+              <div className="flex gap-3 text-xs text-gray-400">
+                <span className={user.quality >= 90 ? 'text-green-400' : user.quality >= 70 ? 'text-yellow-400' : 'text-red-400'}>
+                  Качество: {user.quality}%
+                </span>
+                {user.overdue > 0 && (
+                  <span className="text-red-400">
+                    Просрочено: {user.overdue}
+                  </span>
+                )}
+              </div>
             </div>
           </div>
-          <div className="text-xl font-bold text-white">
-            {user.score}
+          <div className="text-center">
+            <div className="text-2xl font-bold text-white">
+              {user.score}
+            </div>
+            <div className="text-xs text-gray-400">
+              рейтинг
+            </div>
           </div>
         </div>
       ))}
