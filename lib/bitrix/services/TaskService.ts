@@ -2,6 +2,7 @@ import { BitrixClient } from '../client';
 import { BitrixTask } from '../types';
 import { TaskMetadata, mergeTagsWithMetadata } from '@/lib/tasks/metadata';
 import { cache } from '@/lib/cache';
+import { normalizeSystemName } from '@/lib/tasks/systems';
 
 export class TaskService {
   constructor(private client: BitrixClient) {}
@@ -625,8 +626,9 @@ export class TaskService {
     console.log(`🏷️ Загружено тегов для ${tagsMap.size} задач`);
 
     const scrumWeightsMap = new Map<string, number | null>();
+    const scrumEpicsMap = new Map<string, string | null>();
 
-    // Получаем Scrum-веса только если включена загрузка И задача в проекте 52
+    // Получаем Scrum-веса и эпики только если включена загрузка И задача в проекте 52
     if (this.LOAD_SCRUM_WEIGHTS) {
       // Фильтруем только задачи из проекта 52 (Scrum проект)
       const scrumProjectTasks = tasks.filter((task: any) => {
@@ -637,7 +639,7 @@ export class TaskService {
       if (scrumProjectTasks.length > 0) {
         // Ограничиваем количество параллельных запросов до 10 для избежания перегрузки API
         const batchSize = 10;
-        console.log(`📊 Загрузка Scrum-весов включена. Обрабатываем ${scrumProjectTasks.length} задач из проекта 52 (батчами по ${batchSize})`);
+        console.log(`📊 Загрузка Scrum-данных включена. Обрабатываем ${scrumProjectTasks.length} задач из проекта 52 (батчами по ${batchSize})`);
 
         for (let i = 0; i < scrumProjectTasks.length; i += batchSize) {
           const batch = scrumProjectTasks.slice(i, i + batchSize);
@@ -646,9 +648,16 @@ export class TaskService {
             const taskId = taskAny.id || taskAny.ID;
 
             if (taskId) {
+              // Загружаем вес
               const weight = await this.getScrumTaskWeight(taskId);
               if (weight !== null) {
                 scrumWeightsMap.set(taskId, weight);
+              }
+
+              // Загружаем эпик (система)
+              const epic = await this.getScrumTaskEpic(taskId);
+              if (epic !== null) {
+                scrumEpicsMap.set(taskId, epic);
               }
             }
           });
@@ -656,14 +665,37 @@ export class TaskService {
           // Ждем завершения текущего батча перед следующим
           await Promise.allSettled(batchPromises);
         }
-        console.log(`✅ Загружено ${scrumWeightsMap.size} Scrum-весов из ${scrumProjectTasks.length} задач проекта 52`);
+        console.log(`✅ Загружено ${scrumWeightsMap.size} Scrum-весов и ${scrumEpicsMap.size} эпиков из ${scrumProjectTasks.length} задач проекта 52`);
       } else {
-        console.log(`⏭️ Нет задач из проекта 52 для загрузки Scrum-весов`);
+        console.log(`⏭️ Нет задач из проекта 52 для загрузки Scrum-данных`);
       }
     } else {
-      console.log(`⏭️ Загрузка Scrum-весов отключена (LOAD_SCRUM_WEIGHTS=false или не задано)`);
+      console.log(`⏭️ Загрузка Scrum-данных отключена (LOAD_SCRUM_WEIGHTS=false или не задано)`);
     }
-    
+
+    // Загружаем названия групп для всех задач с GROUP_ID
+    const groupNamesMap = new Map<string, string | null>();
+    const uniqueGroupIds = new Set<string>();
+
+    tasks.forEach((task: any) => {
+      const groupId = String(task.GROUP_ID || task.groupId || '');
+      if (groupId && groupId !== '0') {
+        uniqueGroupIds.add(groupId);
+      }
+    });
+
+    if (uniqueGroupIds.size > 0) {
+      console.log(`🏢 Загрузка названий групп для ${uniqueGroupIds.size} проектов...`);
+      const groupLoadPromises = Array.from(uniqueGroupIds).map(async (groupId) => {
+        const groupName = await this.getGroupName(groupId);
+        if (groupName) {
+          groupNamesMap.set(groupId, groupName);
+        }
+      });
+      await Promise.allSettled(groupLoadPromises);
+      console.log(`✅ Загружено ${groupNamesMap.size} названий групп`);
+    }
+
     // Быстрое обогащение без истории - используем только CHANGED_DATE
     for (const task of tasks) {
       // Маппинг полей из camelCase в UPPER_CASE для совместимости
@@ -689,6 +721,38 @@ export class TaskService {
         // Если веса в тегах нет, добавляем его
         if (!hasWeightInTags) {
           tags.push(`weight:${scrumWeight}`);
+        }
+      }
+
+      // Автоматически определяем систему из эпика (Scrum) или названия группы
+      const hasSystemInTags = tags.some(tag => {
+        const lowerTag = String(tag).toLowerCase().trim();
+        return lowerTag.startsWith('system:');
+      });
+
+      if (!hasSystemInTags) {
+        let systemName: string | null = null;
+
+        // Приоритет 1: Эпик из Scrum (для задач в проекте 52)
+        const scrumEpic = scrumEpicsMap.get(taskId);
+        if (scrumEpic) {
+          systemName = normalizeSystemName(scrumEpic);
+        }
+
+        // Приоритет 2: Название группы/проекта (если система не определена)
+        if (!systemName) {
+          const groupId = String(taskAny.groupId || taskAny.GROUP_ID || '');
+          if (groupId && groupId !== '0') {
+            const groupName = groupNamesMap.get(groupId);
+            if (groupName) {
+              systemName = normalizeSystemName(groupName);
+            }
+          }
+        }
+
+        // Добавляем тег system: если система определена и нормализована
+        if (systemName) {
+          tags.push(`system:${systemName}`);
         }
       }
 
