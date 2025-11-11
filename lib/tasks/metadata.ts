@@ -156,24 +156,3 @@ export function sortByManualPriority<T extends { metadata: TaskMetadata }>(
 		return 0
 	})
 }
-
-/**
- * Извлекает приоритет из начала названия задачи
- * Примеры:
- * "1. Задача" -> 1
- * "2 Другая задача" -> 2
- * "Задача без номера" -> null
- */
-export function extractPriorityFromTitle(title: string): number | null {
-	if (!title) return null
-
-	// Ищем цифру в начале строки (с возможной точкой или скобкой после)
-	const match = title.trim().match(/^(\d+)[.\s)]/);
-
-	if (match && match[1]) {
-		const priority = Number(match[1]);
-		return Number.isFinite(priority) ? priority : null;
-	}
-
-	return null;
-}
