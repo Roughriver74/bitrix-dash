@@ -130,26 +130,31 @@ export function TaskTable({
 
 	// Сортируем задачи по приоритету P0-P3
 	const sortedTasks = useMemo(() => {
-		const priorityOrder = { 'P0': 0, 'P1': 1, 'P2': 2, 'P3': 3 }
+		const priorityOrder: Record<string, number> = { 'P0': 0, 'P1': 1, 'P2': 2, 'P3': 3 }
 
-		return [...filteredTasks].sort((a, b) => {
-			const aPriority = a.metadata.p
-			const bPriority = b.metadata.p
+		// Добавляем индекс для стабильной сортировки
+		const tasksWithIndex = filteredTasks.map((task, index) => ({ task, index }))
+
+		const sorted = tasksWithIndex.sort((a, b) => {
+			const aPriority = a.task.metadata.p
+			const bPriority = b.task.metadata.p
 
 			// Задачи с приоритетом идут перед задачами без приоритета
 			if (aPriority && !bPriority) return -1
 			if (!aPriority && bPriority) return 1
 
-			// Обе имеют приоритет - сортируем по значению
+			// Обе имеют приоритет - сортируем по значению P0 -> P1 -> P2 -> P3
 			if (aPriority && bPriority) {
-				const aOrder = priorityOrder[aPriority as keyof typeof priorityOrder] ?? 999
-				const bOrder = priorityOrder[bPriority as keyof typeof priorityOrder] ?? 999
+				const aOrder = priorityOrder[aPriority] ?? 999
+				const bOrder = priorityOrder[bPriority] ?? 999
 				if (aOrder !== bOrder) return aOrder - bOrder
 			}
 
 			// Если приоритеты одинаковые или обе без приоритета - сохраняем исходный порядок
-			return 0
+			return a.index - b.index
 		})
+
+		return sorted.map(item => item.task)
 	}, [filteredTasks])
 
 	const handleDragEnd = (event: DragEndEvent) => {

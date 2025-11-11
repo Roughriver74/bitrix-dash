@@ -14,7 +14,8 @@ export async function GET(request: NextRequest) {
   const stream = new ReadableStream({
     async start(controller) {
       const startTime = Date.now();
-      
+      let isClosed = false;
+
       try {
         // Send initial progress
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
@@ -30,11 +31,14 @@ export async function GET(request: NextRequest) {
         if (!forceRefresh) {
           const cached = await cache.get('dashboard:tasks');
           if (cached) {
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
-              type: 'complete', 
-              data: cached 
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({
+              type: 'complete',
+              data: cached
             })}\n\n`));
-            controller.close();
+            if (!isClosed) {
+              controller.close();
+              isClosed = true;
+            }
             return;
           }
         }
@@ -189,24 +193,30 @@ export async function GET(request: NextRequest) {
           
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(finalMessage)}\n\n`));
         }
-        
-        controller.close();
+
+        if (!isClosed) {
+          controller.close();
+          isClosed = true;
+        }
       } catch (error) {
         console.error('❌ SSE Stream ошибка:', error);
-        
+
         try {
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
-            type: 'error', 
-            error: error instanceof Error ? error.message : 'Неизвестная ошибка' 
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({
+            type: 'error',
+            error: error instanceof Error ? error.message : 'Неизвестная ошибка'
           })}\n\n`));
         } catch (enqueueError) {
           console.error('❌ Ошибка отправки error сообщения:', enqueueError);
         }
-        
-        try {
-          controller.close();
-        } catch (closeError) {
-          console.error('❌ Ошибка закрытия stream:', closeError);
+
+        if (!isClosed) {
+          try {
+            controller.close();
+            isClosed = true;
+          } catch (closeError) {
+            console.error('❌ Ошибка закрытия stream:', closeError);
+          }
         }
       }
     }
