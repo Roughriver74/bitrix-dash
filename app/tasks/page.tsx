@@ -246,23 +246,23 @@ function TasksPageContent() {
 	const activeCount = activeTasks.length
 
 	return (
-		<main className='min-h-screen bg-gray-950 pb-16'>
-			<div className='w-full px-4 py-6'>
+		<main className='min-h-screen bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950 pb-16'>
+			<div className='w-full px-4 py-6 md:px-6 lg:px-8'>
 				<header className='mb-10 flex flex-col gap-4 md:flex-row md:items-center md:justify-between'>
-					<div>
-						<h1 className='text-3xl font-semibold text-white'>
+					<div className='space-y-2'>
+						<h1 className='text-3xl md:text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-white via-gray-100 to-gray-300'>
 							Задачи отдела {departmentName ? `— ${departmentName}` : ''}
 						</h1>
-						<p className='mt-2 text-sm text-gray-400'>
+						<p className='mt-2 text-sm md:text-base text-gray-400 max-w-2xl'>
 							Управляйте приоритетами, тегами и статусами задач прямо из
-							дашборда. Количество активных задач: {activeCount}
+							дашборда. Количество активных задач: <span className='font-semibold text-blue-400'>{activeCount}</span>
 						</p>
 					</div>
 					<div className='flex flex-wrap gap-3'>
 						<button
 							type='button'
 							onClick={fetchTasks}
-							className='inline-flex items-center gap-2 rounded-lg border border-blue-600/40 bg-blue-600/10 px-4 py-2 text-sm font-semibold text-blue-200 transition hover:bg-blue-600/20'
+							className='inline-flex items-center gap-2 rounded-lg border border-blue-600/40 bg-blue-600/10 px-4 py-2 text-sm font-semibold text-blue-200 transition-all duration-200 hover:bg-blue-600/20 hover:border-blue-500 hover:shadow-lg hover:shadow-blue-500/20 active:scale-95'
 							disabled={loading}
 						>
 							<RefreshCw
@@ -273,7 +273,7 @@ function TasksPageContent() {
 						<button
 							type='button'
 							onClick={handleOpenCreate}
-							className='inline-flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-green-500'
+							className='inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-green-600 to-emerald-600 px-4 py-2 text-sm font-semibold text-white transition-all duration-200 hover:from-green-500 hover:to-emerald-500 hover:shadow-lg hover:shadow-green-500/30 active:scale-95'
 						>
 							<Plus className='h-4 w-4' />
 							Новая задача
@@ -282,7 +282,7 @@ function TasksPageContent() {
 				</header>
 
 				{error && (
-					<div className='mb-6 rounded-lg border border-red-500/50 bg-red-500/10 px-4 py-3 text-sm text-red-200'>
+					<div className='mb-6 rounded-lg border border-red-500/50 bg-gradient-to-r from-red-500/10 to-red-600/10 px-4 py-3 text-sm text-red-200 shadow-lg shadow-red-500/10 backdrop-blur-sm animate-pulse'>
 						{error}
 					</div>
 				)}

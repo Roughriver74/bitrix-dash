@@ -11,6 +11,7 @@ import {
   attachMetadata,
   sortByManualPriority,
   statusCodeToName,
+  extractPriorityFromTitle,
 } from '@/lib/tasks/metadata';
 import {
   getConfiguredDepartmentName,
@@ -414,6 +415,10 @@ function prepareTasksPayload(tasks: BitrixTask[], usersMap: UsersMap) {
     const extended = attachMetadata(task);
     const user = usersMap[extended.RESPONSIBLE_ID];
 
+    // Извлекаем приоритет из названия, если manualPriority не задан
+    const titlePriority = extractPriorityFromTitle(extended.TITLE);
+    const finalPriority = extended.metadata.manualPriority ?? titlePriority;
+
     return {
       id: extended.ID,
       title: extended.TITLE,
@@ -427,7 +432,7 @@ function prepareTasksPayload(tasks: BitrixTask[], usersMap: UsersMap) {
       priorityLevel: extended.priority ?? 'normal',
       isOverdue: Boolean(extended.isOverdue),
       metadata: {
-        manualPriority: extended.metadata.manualPriority ?? null,
+        manualPriority: finalPriority,
         abc: extended.metadata.abc ?? null,
         impact: extended.metadata.impact ?? null,
         system: extended.metadata.system ?? null,

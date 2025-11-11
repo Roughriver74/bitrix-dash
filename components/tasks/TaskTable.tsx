@@ -68,6 +68,7 @@ export function TaskTable({
 		system: '',
 		responsibleName: '',
 	})
+	const [hideRequests, setHideRequests] = useState(false)
 	const [groupBy, setGroupBy] = useState<GroupBy>('none')
 	const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
 	const [showStats, setShowStats] = useState(false)
@@ -99,9 +100,13 @@ export function TaskTable({
 				!task.responsibleName?.toLowerCase().includes(filters.responsibleName.toLowerCase())
 			)
 				return false
+			// Фильтр "Заявки" - исключаем задачи со словом "Заявка" в названии
+			if (hideRequests && task.title.toLowerCase().includes('заявка')) {
+				return false
+			}
 			return true
 		})
-	}, [tasks, filters])
+	}, [tasks, filters, hideRequests])
 
 	const clearFilters = () => {
 		setFilters({
@@ -111,9 +116,10 @@ export function TaskTable({
 			system: '',
 			responsibleName: '',
 		})
+		setHideRequests(false)
 	}
 
-	const hasActiveFilters = Object.values(filters).some(f => f !== '')
+	const hasActiveFilters = Object.values(filters).some(f => f !== '') || hideRequests
 
 	const handleDragEnd = (event: DragEndEvent) => {
 		const { active, over } = event
@@ -263,9 +269,9 @@ export function TaskTable({
 	}
 
 	return (
-		<div className='overflow-hidden rounded-xl border border-gray-800 bg-gray-900'>
+		<div className='overflow-hidden rounded-xl border border-gray-800 bg-gradient-to-b from-gray-900 to-gray-900/95 shadow-2xl backdrop-blur-sm'>
 			{/* Панель управления */}
-			<div className='bg-gray-800/50 px-4 py-3 border-b border-gray-700'>
+			<div className='bg-gradient-to-r from-gray-800/60 via-gray-800/50 to-gray-800/60 px-4 py-3 border-b border-gray-700/50 backdrop-blur-md'>
 				<div className='flex flex-wrap items-center gap-3'>
 					{/* Группировка */}
 					<div className='flex items-center gap-2'>
@@ -289,10 +295,10 @@ export function TaskTable({
 						<button
 							onClick={() => applyQuickFilter('urgent')}
 							className={clsx(
-								'px-3 py-1.5 text-xs rounded-md transition border',
+								'px-3 py-1.5 text-xs rounded-md transition-all duration-200 border font-medium',
 								filters.status === '3'
-									? 'bg-blue-600 text-white border-blue-500'
-									: 'bg-gray-900 text-gray-300 border-gray-700 hover:border-blue-500'
+									? 'bg-blue-600 text-white border-blue-500 shadow-lg shadow-blue-500/20 scale-105'
+									: 'bg-gray-900 text-gray-300 border-gray-700 hover:border-blue-500 hover:shadow-md hover:scale-102 active:scale-95'
 							)}
 						>
 							В работе
@@ -300,13 +306,24 @@ export function TaskTable({
 						<button
 							onClick={() => applyQuickFilter('highPriority')}
 							className={clsx(
-								'px-3 py-1.5 text-xs rounded-md transition border',
+								'px-3 py-1.5 text-xs rounded-md transition-all duration-200 border font-medium',
 								filters.abc === 'A'
-									? 'bg-emerald-600 text-white border-emerald-500'
-									: 'bg-gray-900 text-gray-300 border-gray-700 hover:border-emerald-500'
+									? 'bg-emerald-600 text-white border-emerald-500 shadow-lg shadow-emerald-500/20 scale-105'
+									: 'bg-gray-900 text-gray-300 border-gray-700 hover:border-emerald-500 hover:shadow-md hover:scale-102 active:scale-95'
 							)}
 						>
 							Приоритет A
+						</button>
+						<button
+							onClick={() => setHideRequests(!hideRequests)}
+							className={clsx(
+								'px-3 py-1.5 text-xs rounded-md transition-all duration-200 border font-medium',
+								hideRequests
+									? 'bg-purple-600 text-white border-purple-500 shadow-lg shadow-purple-500/20 scale-105'
+									: 'bg-gray-900 text-gray-300 border-gray-700 hover:border-purple-500 hover:shadow-md hover:scale-102 active:scale-95'
+							)}
+						>
+							{hideRequests ? 'Заявки скрыты' : 'Скрыть заявки'}
 						</button>
 						{stats.overdue > 0 && (
 							<button
@@ -376,7 +393,135 @@ export function TaskTable({
 					</button>
 				</div>
 			)}
-			<div className='overflow-x-auto'>
+
+			{/* Мобильный карточный вид */}
+			<div className='block lg:hidden'>
+				<div className='p-4 space-y-3'>
+					{loading && filteredTasks.length === 0 ? (
+						Array.from({ length: 3 }).map((_, idx) => (
+							<div key={`skeleton-card-${idx}`} className='rounded-lg bg-gray-800/50 p-4 animate-pulse'>
+								<div className='h-5 w-3/4 bg-gray-700 rounded mb-3'></div>
+								<div className='h-4 w-full bg-gray-700 rounded mb-2'></div>
+								<div className='h-4 w-2/3 bg-gray-700 rounded'></div>
+							</div>
+						))
+					) : filteredTasks.length === 0 ? (
+						<div className='text-center py-12 text-gray-400'>
+							{tasks.length === 0
+								? 'Задачи не найдены. Добавьте первую задачу.'
+								: 'Нет задач, соответствующих фильтрам.'}
+						</div>
+					) : (
+						filteredTasks.map((task) => (
+							<div
+								key={task.id}
+								className='rounded-lg bg-gradient-to-br from-gray-800/60 to-gray-800/40 border border-gray-700/50 p-4 space-y-3 hover:shadow-xl hover:border-gray-600 transition-all duration-200'
+							>
+								<div className='flex items-start justify-between gap-2'>
+									<div className='flex-1 min-w-0'>
+										<div className='flex items-center gap-2 mb-1'>
+											<span className='text-xs font-bold text-gray-500'>#{task.order}</span>
+											{task.metadata.abc && (
+												<span className={clsx(
+													'text-xs px-2 py-0.5 rounded-full font-bold',
+													getAbcClass(task.metadata.abc)
+												)}>
+													{task.metadata.abc}
+												</span>
+											)}
+											<a
+												href={`https://crmwest.ru/company/personal/user/156/tasks/task/view/${task.id}/`}
+												target='_blank'
+												rel='noopener noreferrer'
+												className='text-xs text-blue-400 hover:text-blue-300 font-mono'
+											>
+												ID: {task.id}
+											</a>
+										</div>
+										<h3 className='font-semibold text-white text-sm mb-1 break-words'>{task.title}</h3>
+										{task.description && (
+											<p className='text-xs text-gray-400 line-clamp-2 mb-2'>{task.description}</p>
+										)}
+									</div>
+								</div>
+
+								<div className='grid grid-cols-2 gap-2 text-xs'>
+									<div>
+										<span className='text-gray-500'>Ответственный:</span>
+										<p className='text-gray-300 font-medium'>{task.responsibleName || '—'}</p>
+									</div>
+									<div>
+										<span className='text-gray-500'>Статус:</span>
+										<div className='mt-1'><StatusBadge status={task.status} label={task.statusName} /></div>
+									</div>
+									{task.deadline && (
+										<div>
+											<span className='text-gray-500'>Дедлайн:</span>
+											<p className={clsx(
+												'text-gray-300 font-medium',
+												task.isOverdue && 'text-red-400'
+											)}>
+												{new Date(task.deadline).toLocaleString('ru-RU', {
+													day: '2-digit',
+													month: '2-digit',
+													hour: '2-digit',
+													minute: '2-digit',
+												})}
+											</p>
+										</div>
+									)}
+									{task.metadata.impact && (
+										<div>
+											<span className='text-gray-500'>Влияние:</span>
+											<p className='text-gray-300'>{task.metadata.impact}</p>
+										</div>
+									)}
+								</div>
+
+								{task.tags.length > 0 && (
+									<div className='flex flex-wrap gap-1'>
+										{task.tags.map((tag, idx) => (
+											<span
+												key={`${task.id}-mobile-tag-${idx}`}
+												className='rounded bg-gray-700 px-2 py-0.5 text-[10px] uppercase tracking-wide text-gray-400'
+											>
+												{tag}
+											</span>
+										))}
+									</div>
+								)}
+
+								<div className='flex justify-end gap-2 pt-2 border-t border-gray-700/50'>
+									<button
+										type='button'
+										onClick={() => onComplete(task)}
+										className='group rounded-lg border border-green-600/50 px-3 py-1.5 text-xs font-semibold text-green-400 transition-all duration-200 hover:bg-green-600/20'
+									>
+										<Check className='h-3.5 w-3.5' />
+									</button>
+									<button
+										type='button'
+										onClick={() => onEdit(task)}
+										className='group rounded-lg border border-blue-600/50 px-3 py-1.5 text-xs font-semibold text-blue-400 transition-all duration-200 hover:bg-blue-600/20'
+									>
+										<Edit className='h-3.5 w-3.5' />
+									</button>
+									<button
+										type='button'
+										onClick={() => onDelete(task)}
+										className='group rounded-lg border border-red-500/50 px-3 py-1.5 text-xs font-semibold text-red-400 transition-all duration-200 hover:bg-red-600/20'
+									>
+										<Trash2 className='h-3.5 w-3.5' />
+									</button>
+								</div>
+							</div>
+						))
+					)}
+				</div>
+			</div>
+
+			{/* Десктопный табличный вид */}
+			<div className='hidden lg:block overflow-x-auto'>
 				<DndContext
 					sensors={sensors}
 					collisionDetection={closestCenter}
@@ -678,10 +823,10 @@ function SortableRow({
 			ref={setNodeRef}
 			style={style}
 			className={clsx(
-				'border-t border-gray-800 transition-colors',
+				'border-t border-gray-800 transition-all duration-200',
 				isDragging
-					? 'bg-blue-900/40 shadow-lg'
-					: rowColorClass || 'hover:bg-gray-800/40'
+					? 'bg-blue-900/40 shadow-2xl scale-102 z-50'
+					: rowColorClass || 'hover:bg-gray-800/60 hover:shadow-lg'
 			)}
 		>
 			<td className='px-4 py-3 text-sm font-semibold text-gray-400'>
@@ -810,26 +955,26 @@ function SortableRow({
 					<button
 						type='button'
 						onClick={() => onComplete(task)}
-						className='rounded-lg border border-green-600/50 px-2 py-2 text-xs font-semibold text-green-400 transition hover:bg-green-600/10'
+						className='group rounded-lg border border-green-600/50 px-2 py-2 text-xs font-semibold text-green-400 transition-all duration-200 hover:bg-green-600/20 hover:border-green-500 hover:shadow-lg hover:shadow-green-500/20 active:scale-95'
 						title='Отметить завершённой'
 					>
-						<Check className='h-4 w-4' />
+						<Check className='h-4 w-4 transition-transform group-hover:scale-110' />
 					</button>
 					<button
 						type='button'
 						onClick={() => onEdit(task)}
-						className='rounded-lg border border-blue-600/50 px-2 py-2 text-xs font-semibold text-blue-400 transition hover:bg-blue-600/10'
+						className='group rounded-lg border border-blue-600/50 px-2 py-2 text-xs font-semibold text-blue-400 transition-all duration-200 hover:bg-blue-600/20 hover:border-blue-500 hover:shadow-lg hover:shadow-blue-500/20 active:scale-95'
 						title='Редактировать'
 					>
-						<Edit className='h-4 w-4' />
+						<Edit className='h-4 w-4 transition-transform group-hover:scale-110' />
 					</button>
 					<button
 						type='button'
 						onClick={() => onDelete(task)}
-						className='rounded-lg border border-red-500/50 px-2 py-2 text-xs font-semibold text-red-400 transition hover:bg-red-600/10'
+						className='group rounded-lg border border-red-500/50 px-2 py-2 text-xs font-semibold text-red-400 transition-all duration-200 hover:bg-red-600/20 hover:border-red-500 hover:shadow-lg hover:shadow-red-500/20 active:scale-95'
 						title='Удалить'
 					>
-						<Trash2 className='h-4 w-4' />
+						<Trash2 className='h-4 w-4 transition-transform group-hover:scale-110' />
 					</button>
 				</div>
 			</td>
