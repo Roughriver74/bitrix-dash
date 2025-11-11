@@ -22,6 +22,7 @@ import clsx from 'clsx'
 import React, { useState, useRef, useEffect, useMemo } from 'react'
 import { TaskListItem } from '@/components/tasks/types'
 import { PRIORITY_LEVELS, getPriorityClass } from '@/lib/tasks/priorities'
+import { AVAILABLE_SYSTEMS } from '@/lib/tasks/systems'
 
 type GroupBy = 'none' | 'abc' | 'status' | 'responsible' | 'impact'
 
@@ -984,8 +985,9 @@ function SortableRow({
 				/>
 			</td>
 			<td className={clsx(cellPadding, 'text-sm text-gray-300')}>
-				<InlineTextInput
+				<InlineSelect
 					value={task.metadata.system ?? ''}
+					options={AVAILABLE_SYSTEMS}
 					onChange={value => {
 						onUpdate?.(task.id, {
 							metadata: {

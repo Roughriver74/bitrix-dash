@@ -502,6 +502,8 @@ export class TaskService {
         taskId,
       }, { silent: true }); // Не логируем ошибки - Scrum может быть недоступен
 
+      console.log(`🔍 Scrum task ${taskId} data:`, JSON.stringify(scrumData).substring(0, 300));
+
       // Проверяем различные варианты структуры ответа
       const storyPoints = scrumData?.storyPoints
         || scrumData?.result?.storyPoints
@@ -514,7 +516,10 @@ export class TaskService {
         const parsed = Number(storyPoints);
         if (Number.isFinite(parsed) && parsed >= 0) {
           weight = parsed;
+          console.log(`✅ Scrum task ${taskId} weight: ${weight}`);
         }
+      } else {
+        console.log(`⚠️ Scrum task ${taskId}: no story points found`);
       }
 
       // Кешируем результат (даже если null - чтобы не делать лишние запросов)
@@ -522,6 +527,7 @@ export class TaskService {
 
       return weight;
     } catch (error) {
+      console.error(`❌ Error loading Scrum data for task ${taskId}:`, error);
       // Если задача не в Scrum или произошла ошибка, кешируем null
       await cache.setex(cacheKey, this.SCRUM_WEIGHT_CACHE_TTL, null);
       return null;
@@ -588,26 +594,12 @@ export class TaskService {
       return cached as string | null;
     }
 
-    try {
-      // Используем sonet_group.get для получения информации о группе
-      const groupData = await this.client.call<any>('sonet_group.get', {
-        ID: groupId,
-      }, { silent: true });
-
-      const name = groupData?.NAME
-        || groupData?.result?.NAME
-        || groupData?.name
-        || groupData?.result?.name;
-
-      const groupName: string | null = name ? String(name).trim() : null;
-
-      // Кешируем на долгое время - названия проектов меняются редко
-      await cache.setex(cacheKey, 86400, groupName); // 24 часа
-      return groupName;
-    } catch (error) {
-      await cache.setex(cacheKey, 86400, null);
-      return null;
-    }
+    // API для получения информации о группах требует дополнительных прав
+    // Поэтому просто возвращаем null - пользователь выберет систему вручную
+    // Автоматическое определение работает только для Scrum задач (по эпику)
+    console.log(`⚠️ Group ${groupId}: автоматическое определение недоступно (требуются права API)`);
+    await cache.setex(cacheKey, 86400, null);
+    return null;
   }
 
   private async enrichTasksData(tasks: BitrixTask[]): Promise<BitrixTask[]> {

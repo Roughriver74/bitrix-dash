@@ -5,6 +5,7 @@ import type { TaskMetadata } from '@/lib/tasks/metadata';
 import { TaskFormMode, TaskListItem, UserOption } from '@/components/tasks/types';
 import { X } from 'lucide-react';
 import { PRIORITY_LEVELS } from '@/lib/tasks/priorities';
+import { AVAILABLE_SYSTEMS } from '@/lib/tasks/systems';
 
 export interface TaskFormValues {
   title: string;
@@ -296,8 +297,7 @@ export function TaskForm({
                 <label className="mb-1 block text-sm font-medium text-gray-300">
                   Система (продукт)
                 </label>
-                <input
-                  type="text"
+                <select
                   value={metadata.system ?? ''}
                   onChange={(event) =>
                     setMetadata((current) => ({
@@ -306,8 +306,14 @@ export function TaskForm({
                     }))
                   }
                   className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-white focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                  placeholder="Например, CRM, Битрикс24"
-                />
+                >
+                  <option value="">Не задано</option>
+                  {AVAILABLE_SYSTEMS.map((system) => (
+                    <option key={system} value={system}>
+                      {system}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div>
