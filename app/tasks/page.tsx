@@ -214,6 +214,8 @@ function TasksPageContent() {
 
 	const handleReorder = async (nextOrder: TaskListItem[]) => {
 		const previous = tasks.map(item => ({ ...item }))
+
+		// Оптимистично обновляем UI
 		setTasks(nextOrder)
 
 		try {
@@ -234,11 +236,16 @@ function TasksPageContent() {
 			if (!response.ok) {
 				throw new Error(await extractError(response))
 			}
+
+			// После успешного сохранения обновляем задачи с сервера
+			// чтобы получить актуальные order и metadata
+			await fetchTasks()
 		} catch (err) {
 			console.error(err)
 			setError(
 				err instanceof Error ? err.message : 'Не удалось изменить порядок задач'
 			)
+			// Откатываем изменения в случае ошибки
 			setTasks(previous)
 		}
 	}

@@ -17,7 +17,7 @@ import {
 	useSortable,
 	verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
-import { GripVertical, Check, Edit, Trash2, X, ChevronDown, ChevronRight, BarChart3 } from 'lucide-react'
+import { GripVertical, Check, Edit, Trash2, X, ChevronDown, ChevronRight, BarChart3, Minimize2, Maximize2, AlertCircle } from 'lucide-react'
 import clsx from 'clsx'
 import React, { useState, useRef, useEffect, useMemo } from 'react'
 import { TaskListItem } from '@/components/tasks/types'
@@ -72,6 +72,7 @@ export function TaskTable({
 	const [groupBy, setGroupBy] = useState<GroupBy>('none')
 	const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
 	const [showStats, setShowStats] = useState(false)
+	const [compactMode, setCompactMode] = useState(false)
 
 	const sensors = useSensors(
 		useSensor(PointerSensor, {
@@ -334,14 +335,28 @@ export function TaskTable({
 						)}
 					</div>
 
-					{/* Статистика */}
-					<button
-						onClick={() => setShowStats(!showStats)}
-						className='ml-auto px-3 py-1.5 text-xs rounded-md transition border bg-gray-900 text-gray-300 border-gray-700 hover:border-blue-500 flex items-center gap-1.5'
-					>
-						<BarChart3 className='h-3.5 w-3.5' />
-						Статистика
-					</button>
+					{/* Компактный режим и статистика */}
+					<div className='ml-auto flex items-center gap-2'>
+						<button
+							onClick={() => setCompactMode(!compactMode)}
+							className='px-3 py-1.5 text-xs rounded-md transition border bg-gray-900 text-gray-300 border-gray-700 hover:border-blue-500 flex items-center gap-1.5'
+							title={compactMode ? 'Обычный режим' : 'Компактный режим'}
+						>
+							{compactMode ? (
+								<Maximize2 className='h-3.5 w-3.5' />
+							) : (
+								<Minimize2 className='h-3.5 w-3.5' />
+							)}
+							{compactMode ? 'Обычный' : 'Компактный'}
+						</button>
+						<button
+							onClick={() => setShowStats(!showStats)}
+							className='px-3 py-1.5 text-xs rounded-md transition border bg-gray-900 text-gray-300 border-gray-700 hover:border-blue-500 flex items-center gap-1.5'
+						>
+							<BarChart3 className='h-3.5 w-3.5' />
+							Статистика
+						</button>
+					</div>
 				</div>
 
 				{/* Статистика развернутая */}
@@ -708,6 +723,7 @@ export function TaskTable({
 											onEdit={onEdit}
 											onComplete={onComplete}
 											onDelete={onDelete}
+											compactMode={compactMode}
 											onUpdate={onUpdate}
 										/>
 									))
@@ -743,6 +759,7 @@ export function TaskTable({
 															onEdit={onEdit}
 															onComplete={onComplete}
 															onDelete={onDelete}
+															compactMode={compactMode}
 															onUpdate={onUpdate}
 														/>
 													))}
@@ -764,6 +781,7 @@ interface SortableRowProps {
 	onEdit: (task: TaskListItem) => void
 	onComplete: (task: TaskListItem) => void
 	onDelete: (task: TaskListItem) => void
+	compactMode?: boolean
 	onUpdate?: (
 		taskId: string,
 		updates: {
@@ -790,6 +808,7 @@ function SortableRow({
 	onEdit,
 	onComplete,
 	onDelete,
+	compactMode = false,
 	onUpdate,
 }: SortableRowProps) {
 	const {
@@ -818,21 +837,28 @@ function SortableRow({
 	// Цветовая индикация строки
 	const rowColorClass = getRowColorClass(task)
 
+	// Классы для компактного режима
+	const cellPadding = compactMode ? 'px-3 py-1.5' : 'px-4 py-3'
+
 	return (
 		<tr
 			ref={setNodeRef}
 			style={style}
 			className={clsx(
-				'border-t border-gray-800 transition-all duration-200',
+				'border-t border-gray-800 transition-all duration-200 group',
 				isDragging
 					? 'bg-blue-900/40 shadow-2xl scale-102 z-50'
-					: rowColorClass || 'hover:bg-gray-800/60 hover:shadow-lg'
+					: rowColorClass || 'hover:bg-gray-800/60 hover:shadow-lg',
+				compactMode && 'text-xs'
 			)}
 		>
-			<td className='px-4 py-3 text-sm font-semibold text-gray-400'>
+			<td className={clsx(cellPadding, 'text-sm font-semibold text-gray-400 relative')}>
+				{task.isOverdue && (
+					<span className='absolute -left-1 top-1/2 -translate-y-1/2 w-2 h-2 bg-red-500 rounded-full animate-pulse' />
+				)}
 				{task.order}
 			</td>
-			<td className='px-4 py-3 text-gray-500'>
+			<td className={clsx(cellPadding, 'text-gray-500')}>
 				<button
 					type='button'
 					className='cursor-grab rounded p-2 transition hover:bg-gray-800 hover:text-white active:cursor-grabbing'
@@ -842,7 +868,7 @@ function SortableRow({
 					<GripVertical className='h-4 w-4' />
 				</button>
 			</td>
-			<td className='px-4 py-3'>
+			<td className={cellPadding}>
 				<a
 					href={`https://crmwest.ru/company/personal/user/156/tasks/task/view/${task.id}/`}
 					target='_blank'
@@ -852,7 +878,7 @@ function SortableRow({
 					{task.id}
 				</a>
 			</td>
-			<td className='px-4 py-3'>
+			<td className={cellPadding}>
 				<InlineSelect
 					value={task.metadata.abc ?? ''}
 					options={['A', 'B', 'C']}
@@ -868,17 +894,17 @@ function SortableRow({
 					placeholder='—'
 				/>
 			</td>
-			<td className='px-4 py-3 align-top'>
-				<div className='space-y-1 max-w-md'>
+			<td className={clsx(cellPadding, 'align-top')}>
+				<div className={clsx('space-y-1 max-w-md', compactMode && 'space-y-0.5')}>
 					<div className='font-semibold text-white break-words'>
 						{task.title}
 					</div>
-					{task.description && (
+					{!compactMode && task.description && (
 						<p className='text-xs text-gray-400 line-clamp-3 max-h-[4.5rem] overflow-hidden break-words'>
 							{task.description}
 						</p>
 					)}
-					{task.tags.length > 0 && (
+					{task.tags.length > 0 && !compactMode && (
 						<div className='flex flex-wrap gap-1 pt-1'>
 							{task.tags.map((tag, idx) => (
 								<span
@@ -892,21 +918,23 @@ function SortableRow({
 					)}
 				</div>
 			</td>
-			<td className='px-4 py-3 align-top text-sm text-gray-300'>
+			<td className={clsx(cellPadding, 'align-top text-sm text-gray-300')}>
 				{task.responsibleName || '—'}
 			</td>
-			<td className='px-4 py-3'>
+			<td className={cellPadding}>
 				<StatusBadge status={task.status} label={task.statusName} />
 			</td>
 			<td
 				className={clsx(
-					'px-4 py-3 text-sm',
+					cellPadding,
+					'text-sm flex items-center gap-1',
 					task.isOverdue ? 'text-red-400 font-semibold' : 'text-gray-300'
 				)}
 			>
+				{task.isOverdue && <AlertCircle className='h-3 w-3 animate-pulse' />}
 				{deadline}
 			</td>
-			<td className='px-4 py-3 text-center text-sm text-gray-200'>
+			<td className={clsx(cellPadding, 'text-center text-sm text-gray-200')}>
 				<InlineNumberInput
 					value={task.metadata.weight ?? ''}
 					onChange={value => {
@@ -920,7 +948,7 @@ function SortableRow({
 					placeholder='—'
 				/>
 			</td>
-			<td className='px-4 py-3 text-sm text-gray-300'>
+			<td className={clsx(cellPadding, 'text-sm text-gray-300')}>
 				<InlineSelect
 					value={task.metadata.impact ?? ''}
 					options={['Сильное', 'Умеренное', 'Слабое']}
@@ -936,7 +964,7 @@ function SortableRow({
 					placeholder='—'
 				/>
 			</td>
-			<td className='px-4 py-3 text-sm text-gray-300'>
+			<td className={clsx(cellPadding, 'text-sm text-gray-300')}>
 				<InlineTextInput
 					value={task.metadata.system ?? ''}
 					onChange={value => {
@@ -950,7 +978,7 @@ function SortableRow({
 					placeholder='—'
 				/>
 			</td>
-			<td className='px-4 py-3 text-right'>
+			<td className={clsx(cellPadding, 'text-right')}>
 				<div className='flex justify-end gap-2'>
 					<button
 						type='button'
