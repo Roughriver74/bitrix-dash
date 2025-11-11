@@ -128,21 +128,45 @@ export function TaskTable({
 
 	const hasActiveFilters = Object.values(filters).some(f => f !== '') || hideRequests
 
+	// Сортируем задачи по приоритету P0-P3
+	const sortedTasks = useMemo(() => {
+		const priorityOrder = { 'P0': 0, 'P1': 1, 'P2': 2, 'P3': 3 }
+
+		return [...filteredTasks].sort((a, b) => {
+			const aPriority = a.metadata.p
+			const bPriority = b.metadata.p
+
+			// Задачи с приоритетом идут перед задачами без приоритета
+			if (aPriority && !bPriority) return -1
+			if (!aPriority && bPriority) return 1
+
+			// Обе имеют приоритет - сортируем по значению
+			if (aPriority && bPriority) {
+				const aOrder = priorityOrder[aPriority as keyof typeof priorityOrder] ?? 999
+				const bOrder = priorityOrder[bPriority as keyof typeof priorityOrder] ?? 999
+				if (aOrder !== bOrder) return aOrder - bOrder
+			}
+
+			// Если приоритеты одинаковые или обе без приоритета - сохраняем исходный порядок
+			return 0
+		})
+	}, [filteredTasks])
+
 	const handleDragEnd = (event: DragEndEvent) => {
 		const { active, over } = event
 		if (!over || active.id === over.id) {
 			return
 		}
 
-		// Используем filteredTasks для правильного определения индексов
-		const oldIndex = filteredTasks.findIndex(task => task.id === active.id)
-		const newIndex = filteredTasks.findIndex(task => task.id === over.id)
+		// Используем sortedTasks для правильного определения индексов
+		const oldIndex = sortedTasks.findIndex(task => task.id === active.id)
+		const newIndex = sortedTasks.findIndex(task => task.id === over.id)
 		if (oldIndex === -1 || newIndex === -1) {
 			return
 		}
 
-		// Перемещаем в отфильтрованном списке
-		const reorderedFiltered = arrayMove(filteredTasks, oldIndex, newIndex)
+		// Перемещаем в отсортированном списке
+		const reorderedFiltered = arrayMove(sortedTasks, oldIndex, newIndex)
 
 		// Обновляем только визуальный порядок (order), НЕ трогая manualPriority
 		const reordered = reorderedFiltered.map((task, index) => ({
@@ -173,40 +197,40 @@ export function TaskTable({
 	// Статистика
 	const stats = useMemo(() => {
 		return {
-			total: filteredTasks.length,
+			total: sortedTasks.length,
 			byAbc: {
-				A: filteredTasks.filter(t => t.metadata.abc === 'A').length,
-				B: filteredTasks.filter(t => t.metadata.abc === 'B').length,
-				C: filteredTasks.filter(t => t.metadata.abc === 'C').length,
-				none: filteredTasks.filter(t => !t.metadata.abc).length,
+				A: sortedTasks.filter(t => t.metadata.abc === 'A').length,
+				B: sortedTasks.filter(t => t.metadata.abc === 'B').length,
+				C: sortedTasks.filter(t => t.metadata.abc === 'C').length,
+				none: sortedTasks.filter(t => !t.metadata.abc).length,
 			},
 			byStatus: {
-				new: filteredTasks.filter(t => t.status === '1').length,
-				waiting: filteredTasks.filter(t => t.status === '2').length,
-				inProgress: filteredTasks.filter(t => t.status === '3').length,
-				control: filteredTasks.filter(t => t.status === '4').length,
-				completed: filteredTasks.filter(t => t.status === '5').length,
-				deferred: filteredTasks.filter(t => t.status === '6').length,
-				declined: filteredTasks.filter(t => t.status === '7').length,
+				new: sortedTasks.filter(t => t.status === '1').length,
+				waiting: sortedTasks.filter(t => t.status === '2').length,
+				inProgress: sortedTasks.filter(t => t.status === '3').length,
+				control: sortedTasks.filter(t => t.status === '4').length,
+				completed: sortedTasks.filter(t => t.status === '5').length,
+				deferred: sortedTasks.filter(t => t.status === '6').length,
+				declined: sortedTasks.filter(t => t.status === '7').length,
 			},
 			byImpact: {
-				high: filteredTasks.filter(t => t.metadata.impact === 'Сильное').length,
-				medium: filteredTasks.filter(t => t.metadata.impact === 'Умеренное').length,
-				low: filteredTasks.filter(t => t.metadata.impact === 'Слабое').length,
+				high: sortedTasks.filter(t => t.metadata.impact === 'Сильное').length,
+				medium: sortedTasks.filter(t => t.metadata.impact === 'Умеренное').length,
+				low: sortedTasks.filter(t => t.metadata.impact === 'Слабое').length,
 			},
-			overdue: filteredTasks.filter(t => t.isOverdue).length,
+			overdue: sortedTasks.filter(t => t.isOverdue).length,
 		}
-	}, [filteredTasks])
+	}, [sortedTasks])
 
 	// Группировка задач
 	const groupedTasks = useMemo(() => {
 		if (groupBy === 'none') {
-			return { 'Все задачи': filteredTasks }
+			return { 'Все задачи': sortedTasks }
 		}
 
 		const groups: Record<string, TaskListItem[]> = {}
 
-		filteredTasks.forEach(task => {
+		sortedTasks.forEach(task => {
 			let groupKey = 'Без группы'
 
 			switch (groupBy) {
@@ -242,7 +266,7 @@ export function TaskTable({
 		})
 
 		return groups
-	}, [filteredTasks, groupBy])
+	}, [sortedTasks, groupBy])
 
 	const toggleGroup = (groupKey: string) => {
 		setCollapsedGroups(prev => {
@@ -315,7 +339,7 @@ export function TaskTable({
 									: 'bg-gray-900 text-gray-300 border-gray-700 hover:border-emerald-500 hover:shadow-md hover:scale-102 active:scale-95'
 							)}
 						>
-							Приоритет A
+							Группа A
 						</button>
 						<button
 							onClick={() => setHideRequests(!hideRequests)}

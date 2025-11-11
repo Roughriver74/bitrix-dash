@@ -498,28 +498,27 @@ export class TaskService {
     }
 
     try {
+      // ВАЖНО: параметр должен быть "id", а не "taskId"!
       const scrumData = await this.client.call<any>('tasks.api.scrum.task.get', {
-        taskId,
-      }, { silent: true }); // Не логируем ошибки - Scrum может быть недоступен
+        id: taskId,
+      }, { silent: true });
 
       console.log(`🔍 Scrum task ${taskId} data:`, JSON.stringify(scrumData).substring(0, 300));
 
-      // Проверяем различные варианты структуры ответа
-      const storyPoints = scrumData?.storyPoints
-        || scrumData?.result?.storyPoints
-        || scrumData?.task?.storyPoints
-        || scrumData?.data?.storyPoints;
+      // API возвращает данные напрямую: { storyPoints: "", epicId: 9, ... }
+      const storyPoints = scrumData?.storyPoints;
 
       let weight: number | null = null;
 
-      if (storyPoints !== undefined && storyPoints !== null) {
+      // storyPoints может быть пустой строкой - это валидно
+      if (storyPoints !== undefined && storyPoints !== null && storyPoints !== '') {
         const parsed = Number(storyPoints);
         if (Number.isFinite(parsed) && parsed >= 0) {
           weight = parsed;
           console.log(`✅ Scrum task ${taskId} weight: ${weight}`);
         }
       } else {
-        console.log(`⚠️ Scrum task ${taskId}: no story points found`);
+        console.log(`⚠️ Scrum task ${taskId}: no story points (empty or not set)`);
       }
 
       // Кешируем результат (даже если null - чтобы не делать лишние запросов)
@@ -547,32 +546,49 @@ export class TaskService {
     }
 
     try {
+      // ВАЖНО: параметр должен быть "id", а не "taskId"!
       const scrumData = await this.client.call<any>('tasks.api.scrum.task.get', {
-        taskId,
+        id: taskId,
       }, { silent: true });
 
-      // Проверяем различные варианты структуры ответа для Epic
-      const epic = scrumData?.epic
-        || scrumData?.result?.epic
-        || scrumData?.task?.epic
-        || scrumData?.data?.epic
-        || scrumData?.epicName
-        || scrumData?.result?.epicName;
+      console.log(`🔍 Scrum task ${taskId} epic data:`, JSON.stringify(scrumData).substring(0, 300));
 
-      let epicName: string | null = null;
+      // API возвращает данные напрямую: { epicId: 9, ... }
+      const epicId = scrumData?.epicId;
 
-      if (epic) {
-        // Epic может быть объектом с полем name или просто строкой
-        if (typeof epic === 'object' && epic.name) {
-          epicName = String(epic.name).trim();
-        } else if (typeof epic === 'string') {
-          epicName = epic.trim();
-        }
+      if (!epicId) {
+        console.log(`⚠️ Scrum task ${taskId}: no epicId found`);
+        await cache.setex(cacheKey, this.SCRUM_WEIGHT_CACHE_TTL, null);
+        return null;
       }
 
-      await cache.setex(cacheKey, this.SCRUM_WEIGHT_CACHE_TTL, epicName);
-      return epicName;
+      // Получаем название эпика по ID
+      console.log(`📌 Loading epic ${epicId} for task ${taskId}...`);
+      const epicData = await this.client.call<any>('tasks.api.scrum.epic.get', {
+        id: epicId,
+      }, { silent: true });
+
+      console.log(`🔍 Epic ${epicId} data:`, JSON.stringify(epicData).substring(0, 300));
+
+      // Пробуем получить название эпика из разных мест в ответе
+      const epicName = epicData?.result?.name
+        || epicData?.result?.NAME
+        || epicData?.name
+        || epicData?.NAME
+        || null;
+
+      if (epicName) {
+        const name = String(epicName).trim();
+        console.log(`✅ Epic ${epicId} name: ${name}`);
+        await cache.setex(cacheKey, this.SCRUM_WEIGHT_CACHE_TTL, name);
+        return name;
+      } else {
+        console.log(`⚠️ Epic ${epicId}: no name found in response`);
+        await cache.setex(cacheKey, this.SCRUM_WEIGHT_CACHE_TTL, null);
+        return null;
+      }
     } catch (error) {
+      console.error(`❌ Error loading epic for task ${taskId}:`, error);
       await cache.setex(cacheKey, this.SCRUM_WEIGHT_CACHE_TTL, null);
       return null;
     }
@@ -594,12 +610,44 @@ export class TaskService {
       return cached as string | null;
     }
 
-    // API для получения информации о группах требует дополнительных прав
-    // Поэтому просто возвращаем null - пользователь выберет систему вручную
-    // Автоматическое определение работает только для Scrum задач (по эпику)
-    console.log(`⚠️ Group ${groupId}: автоматическое определение недоступно (требуются права API)`);
-    await cache.setex(cacheKey, 86400, null);
-    return null;
+    try {
+      // Пробуем получить информацию о группе
+      const groupData = await this.client.call<any>('sonet_group.get', {
+        ID: groupId,
+      }, { silent: true });
+
+      console.log(`🔍 Group ${groupId} data:`, JSON.stringify(groupData).substring(0, 300));
+
+      // API возвращает массив всех групп, нужно найти нужную по ID
+      let groupName: string | null = null;
+
+      if (Array.isArray(groupData)) {
+        // Ищем группу с нужным ID в массиве
+        const group = groupData.find(g => String(g.ID) === String(groupId));
+        if (group) {
+          groupName = group.NAME || group.name || null;
+        }
+      } else {
+        // Если вдруг вернулся один объект (для совместимости)
+        groupName = groupData?.NAME || groupData?.name || null;
+      }
+
+      groupName = groupName ? String(groupName).trim() : null;
+
+      if (groupName) {
+        console.log(`✅ Group ${groupId} name: ${groupName}`);
+      } else {
+        console.log(`⚠️ Group ${groupId}: no name found in response`);
+      }
+
+      // Кешируем на долгое время - названия проектов меняются редко
+      await cache.setex(cacheKey, 86400, groupName); // 24 часа
+      return groupName;
+    } catch (error) {
+      console.error(`❌ Error loading group ${groupId}:`, error);
+      await cache.setex(cacheKey, 86400, null);
+      return null;
+    }
   }
 
   private async enrichTasksData(tasks: BitrixTask[]): Promise<BitrixTask[]> {
