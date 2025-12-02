@@ -17,6 +17,8 @@ import {
   getConfiguredWebhookUrl,
 } from '@/lib/config';
 import { BitrixTask, BitrixUser } from '@/lib/bitrix/types';
+import { prisma } from '@/lib/prisma';
+import { BitrixSyncService } from '@/lib/sync/bitrix';
 
 interface UsersMap {
   [id: string]: {
@@ -69,7 +71,12 @@ export async function GET(request: Request) {
   try {
     console.log('📥 GET /api/tasks вызван');
 
-    const { taskService, department, userIds, usersList, usersMap } =
+    const { url } = request;
+    const searchParams = new URL(url).searchParams;
+    const forceSync = searchParams.get('forceSync') === 'true';
+    const includeCompleted = searchParams.get('includeCompleted') === 'true';
+
+    const { taskService, department, userIds, usersList, usersMap, client } =
       await getDepartmentContext();
 
     console.log(`👥 Получено ${userIds.length} пользователей для отдела "${department.NAME}"`);
@@ -86,24 +93,96 @@ export async function GET(request: Request) {
       });
     }
 
-    const includeCompleted =
-      new URL(request.url).searchParams.get('includeCompleted') === 'true';
+    // Если запрошен forceSync, запускаем синхронизацию
+    if (forceSync) {
+      console.log('🔄 Запрошена принудительная синхронизация');
+      const syncService = new BitrixSyncService(client);
+      await syncService.syncAllTasks(userIds);
+    }
 
-    const { activeTasks, completedTasks } = await taskService.getAllTasks(
-      userIds,
-    );
+    // Читаем задачи из БД
+    console.log('📖 Чтение задач из локальной БД');
+    
+    // Если БД пустая, и это не forceSync, может стоит запустить синхронизацию?
+    // Для начала просто проверим количество
+    const count = await prisma.task.count();
+    if (count === 0 && !forceSync) {
+       console.log('⚠️ БД пуста, запускаем автоматическую синхронизацию');
+       const syncService = new BitrixSyncService(client);
+       await syncService.syncAllTasks(userIds);
+    }
 
-    console.log(`📋 После getAllTasks: ${activeTasks.length} активных, ${completedTasks.length} завершенных`);
+    const whereClause: any = {
+      isDeleted: false,
+    };
 
-    const baseTasks = includeCompleted
-      ? [...activeTasks, ...completedTasks]
-      : activeTasks;
+    if (!includeCompleted) {
+      // Исключаем завершенные (статус 5) и отложенные (6)
+      whereClause.status = {
+        notIn: ['5', '6'],
+      };
+    }
 
-    console.log(`📦 Подготавливаем ${baseTasks.length} задач для отправки`);
+    const dbTasks = await prisma.task.findMany({
+      where: whereClause,
+      include: {
+        tags: {
+          include: {
+            tag: true
+          }
+        },
+        system: true,
+        priority: true,
+        abc: true,
+        impact: true,
+        responsible: true
+      },
+      orderBy: [
+        { priority: { name: 'asc' } }, // P0, P1...
+        { id: 'desc' }
+      ]
+    });
 
-    const payloadTasks = prepareTasksPayload(baseTasks, usersMap);
+    console.log(`📦 Получено ${dbTasks.length} задач из БД`);
 
-    console.log(`✅ Отправляем ${payloadTasks.length} задач на фронтенд`);
+    // Маппинг задач из БД в формат API
+    const payloadTasks = dbTasks.map((task: any, index: number) => {
+      const tags = task.tags.map((t: any) => t.tag.name);
+      
+      // Формируем otherTags (все теги, которые не являются метаданными)
+      // В текущей реализации мы храним все теги в tags, а метаданные в полях
+      // Но для совместимости с фронтендом нужно вернуть tags и otherTags
+      
+      return {
+        id: task.id,
+        title: task.title,
+        description: task.description || '',
+        responsibleId: task.responsibleId,
+        responsibleName: task.responsible?.name || task.responsibleName || usersMap[task.responsibleId]?.name || '',
+        status: task.status,
+        statusName: task.statusName || statusCodeToName(task.status),
+        deadline: task.deadline ? task.deadline.toISOString() : null,
+        inactiveDays: null, // TODO: вычислять
+        priorityLevel: 'normal', // TODO: вычислять
+        isOverdue: task.deadline ? new Date(task.deadline) < new Date() && task.status !== '5' : false,
+        metadata: {
+          manualPriority: null,
+          abc: task.abc?.name || null,
+          impact: task.impact?.name || null,
+          system: task.system?.name || null,
+          p: task.priority?.name || null,
+          weight: task.weight,
+        },
+        tags: tags,
+        otherTags: tags.filter((t: string) => !t.includes(':')), // Упрощенно
+        raw: {
+          createdDate: task.createdDate ? task.createdDate.toISOString() : undefined,
+          changedDate: task.changedDate ? task.changedDate.toISOString() : undefined,
+          closedDate: task.closedDate ? task.closedDate.toISOString() : undefined,
+        },
+        order: index + 1,
+      };
+    });
 
     return NextResponse.json({
       tasks: payloadTasks,
@@ -327,7 +406,7 @@ async function getDepartmentContext() {
   const usersList = await fetchUsers(client, userIds);
   const usersMap = buildUsersMap(usersList);
 
-  return { taskService, department, userIds, usersList, usersMap };
+  return { taskService, department, userIds, usersList, usersMap, client };
 }
 
 async function getTaskServiceContext(withUsers = true) {

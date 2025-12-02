@@ -40,3 +40,5 @@ config.json
 
 # database
 .data/
+
+/lib/generated/prisma

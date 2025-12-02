@@ -36,10 +36,18 @@ RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
 
 # Copy necessary files
+# Copy necessary files
 # Copy public directory (contains .gitkeep at minimum)
 COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+
+# Copy Prisma schema and entrypoint
+COPY --chown=nextjs:nodejs prisma ./prisma
+COPY --chown=nextjs:nodejs docker-entrypoint.sh ./
+
+# Create directory for SQLite database
+RUN mkdir -p /app/db && chown nextjs:nodejs /app/db
 
 # Set correct permissions
 RUN chown -R nextjs:nodejs /app
@@ -50,6 +58,8 @@ EXPOSE 3000
 
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
+# Default database URL for production
+ENV DATABASE_URL="file:/app/db/prod.db"
 
-CMD ["node", "server.js"]
+ENTRYPOINT ["./docker-entrypoint.sh"]
 

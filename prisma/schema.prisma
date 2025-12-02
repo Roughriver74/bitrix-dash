@@ -1,0 +1,100 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model Task {
+  id              String   @id
+  title           String
+  description     String?
+  
+  responsibleId   String
+  responsible     User     @relation(fields: [responsibleId], references: [id])
+  responsibleName String?
+
+  status          String
+  statusName      String?
+  deadline        DateTime?
+  createdDate     DateTime?
+  changedDate     DateTime?
+  closedDate      DateTime?
+  groupId         String?
+  groupName       String?
+  
+  // Relations to Metadata
+  priorityId      String?
+  priority        Priority? @relation(fields: [priorityId], references: [id])
+  
+  abcId           String?
+  abc             Abc?      @relation(fields: [abcId], references: [id])
+  
+  impactId        String?
+  impact          Impact?   @relation(fields: [impactId], references: [id])
+  
+  systemId        String?
+  system          System?   @relation(fields: [systemId], references: [id])
+  
+  weight          Float?
+  
+  tags            TaskTag[]
+  
+  order           Int      @default(0)
+  isDeleted       Boolean  @default(false)
+  
+  updatedAt       DateTime @updatedAt
+}
+
+model System {
+  id    String @id @default(cuid())
+  name  String @unique
+  tasks Task[]
+}
+
+model Impact {
+  id    String @id @default(cuid())
+  name  String @unique
+  tasks Task[]
+}
+
+model Abc {
+  id    String @id @default(cuid())
+  name  String @unique
+  tasks Task[]
+}
+
+model Priority {
+  id    String @id @default(cuid())
+  name  String @unique
+  tasks Task[]
+}
+
+model Tag {
+  id    String    @id @default(cuid())
+  name  String    @unique
+  tasks TaskTag[]
+}
+
+model TaskTag {
+  taskId String
+  tagId  String
+  task   Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  tag    Tag  @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([taskId, tagId])
+}
+
+model User {
+  id       String  @id
+  name     String
+  email    String?
+  position String?
+  active   Boolean @default(true)
+  tasks    Task[]
+}

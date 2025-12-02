@@ -16,8 +16,14 @@ export async function GET(request: NextRequest) {
       const startTime = Date.now();
       let isClosed = false;
 
+      // Listen for client disconnect
+      request.signal.addEventListener('abort', () => {
+        isClosed = true;
+      });
+
       try {
         // Send initial progress
+        if (request.signal.aborted) return;
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
           type: 'progress', 
           message: 'Начало загрузки данных...',
@@ -31,6 +37,7 @@ export async function GET(request: NextRequest) {
         if (!forceRefresh) {
           const cached = await cache.get('dashboard:tasks');
           if (cached) {
+            if (request.signal.aborted) return;
             controller.enqueue(encoder.encode(`data: ${JSON.stringify({
               type: 'complete',
               data: cached
@@ -51,6 +58,7 @@ export async function GET(request: NextRequest) {
         const taskService = new TaskService(client);
         
         // Get department
+        if (request.signal.aborted) return;
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
           type: 'progress', 
           message: `Получение департамента "${departmentName}"...`,
@@ -63,6 +71,7 @@ export async function GET(request: NextRequest) {
         }
 
         // Get users
+        if (request.signal.aborted) return;
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
           type: 'progress', 
           message: 'Получение пользователей департамента...',
@@ -72,6 +81,7 @@ export async function GET(request: NextRequest) {
         const userIds = await deptService.getAllDepartmentUsers(department.ID, true);
 
         // Get active and completed tasks with optimized filters
+        if (request.signal.aborted) return;
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
           type: 'progress', 
           message: 'Загрузка активных и завершенных задач...',
@@ -80,6 +90,7 @@ export async function GET(request: NextRequest) {
         
         const { activeTasks, completedTasks } = await taskService.getAllTasks(userIds);
         
+        if (request.signal.aborted) return;
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
           type: 'progress', 
           message: 'Задачи успешно загружены...',
@@ -87,6 +98,7 @@ export async function GET(request: NextRequest) {
         })}\n\n`));
 
         // Get users info
+        if (request.signal.aborted) return;
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
           type: 'progress', 
           message: 'Получение информации о пользователях...',
@@ -99,6 +111,7 @@ export async function GET(request: NextRequest) {
         const absences: Record<string, any> = {};
 
         // Generate stats
+        if (request.signal.aborted) return;
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
           type: 'progress', 
           message: 'Генерация статистики...',
@@ -154,6 +167,7 @@ export async function GET(request: NextRequest) {
           }
           
           // Send chunk metadata first
+          if (request.signal.aborted) return;
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({
             type: 'chunked_start',
             totalChunks: chunks.length,
@@ -162,6 +176,7 @@ export async function GET(request: NextRequest) {
           
           // Small delay between chunks to prevent overwhelming the connection
           for (let i = 0; i < chunks.length; i++) {
+            if (request.signal.aborted) return;
             controller.enqueue(encoder.encode(`data: ${JSON.stringify({
               type: 'chunk',
               index: i,
@@ -179,6 +194,7 @@ export async function GET(request: NextRequest) {
           await new Promise(resolve => setTimeout(resolve, 50));
           
           // Send completion message
+          if (request.signal.aborted) return;
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({
             type: 'complete',
             loadTime: Date.now() - startTime
@@ -191,23 +207,36 @@ export async function GET(request: NextRequest) {
             loadTime: Date.now() - startTime
           };
           
+          if (request.signal.aborted) return;
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(finalMessage)}\n\n`));
         }
 
-        if (!isClosed) {
+        if (!isClosed && !request.signal.aborted) {
           controller.close();
           isClosed = true;
         }
       } catch (error) {
+        // Check if error is due to closed controller or client disconnect
+        const isStreamClosed = error instanceof TypeError && 
+          (error.message.includes('Controller is already closed') || error.message.includes('closed'));
+        
+        if (isStreamClosed || request.signal.aborted) {
+          // console.log('ℹ️ Stream closed by client or aborted');
+          return;
+        }
+
         console.error('❌ SSE Stream ошибка:', error);
 
         try {
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({
-            type: 'error',
-            error: error instanceof Error ? error.message : 'Неизвестная ошибка'
-          })}\n\n`));
+          // Only try to send error if we think the stream is still open
+          if (!isClosed && !request.signal.aborted) {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({
+              type: 'error',
+              error: error instanceof Error ? error.message : 'Неизвестная ошибка'
+            })}\n\n`));
+          }
         } catch (enqueueError) {
-          console.error('❌ Ошибка отправки error сообщения:', enqueueError);
+          // Ignore errors during error reporting (likely stream closed)
         }
 
         if (!isClosed) {
@@ -215,7 +244,7 @@ export async function GET(request: NextRequest) {
             controller.close();
             isClosed = true;
           } catch (closeError) {
-            console.error('❌ Ошибка закрытия stream:', closeError);
+            // Ignore errors during close
           }
         }
       }

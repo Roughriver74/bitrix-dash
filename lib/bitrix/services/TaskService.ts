@@ -650,7 +650,7 @@ export class TaskService {
     }
   }
 
-  private async enrichTasksData(tasks: BitrixTask[]): Promise<BitrixTask[]> {
+  public async enrichTasksData(tasks: BitrixTask[]): Promise<BitrixTask[]> {
     console.log(`🔄 enrichTasksData вызван для ${tasks.length} задач`);
 
     if (tasks.length === 0) {

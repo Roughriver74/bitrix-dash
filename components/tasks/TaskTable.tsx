@@ -17,18 +17,19 @@ import {
 	useSortable,
 	verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
-import { GripVertical, Check, Edit, Trash2, X, ChevronDown, ChevronRight, BarChart3, Minimize2, Maximize2, AlertCircle } from 'lucide-react'
+import { GripVertical, Check, Edit, Trash2, X, ChevronDown, ChevronRight, BarChart3, Minimize2, Maximize2, AlertCircle, Search, EyeOff, RefreshCw } from 'lucide-react'
 import clsx from 'clsx'
 import React, { useState, useRef, useEffect, useMemo } from 'react'
 import { TaskListItem } from '@/components/tasks/types'
 import { PRIORITY_LEVELS, getPriorityClass } from '@/lib/tasks/priorities'
 import { AVAILABLE_SYSTEMS } from '@/lib/tasks/systems'
 
-type GroupBy = 'none' | 'abc' | 'status' | 'responsible' | 'impact'
+type GroupBy = 'none' | 'abc' | 'status' | 'responsible' | 'impact' | 'priority'
 
 interface TaskTableProps {
 	tasks: TaskListItem[]
 	loading?: boolean
+	isAdminMode?: boolean
 	onReorder: (tasks: TaskListItem[]) => void
 	onEdit: (task: TaskListItem) => void
 	onComplete: (task: TaskListItem) => void
@@ -42,27 +43,33 @@ interface TaskTableProps {
 				responsibleId?: string
 				deadline?: string
 				status?: string
+				ufCrmTask?: string[]
 			}
 			metadata?: {
+				manualPriority?: number | null
 				abc?: string | null
 				impact?: string | null
 				system?: string | null
 				p?: string | null
 				weight?: number | null
 			}
+			tags?: string[]
 			otherTags?: string[]
 		}
 	) => Promise<void>
+	onSync?: () => void
 }
 
 export function TaskTable({
 	tasks,
 	loading,
+	isAdminMode = false,
 	onReorder,
 	onEdit,
 	onComplete,
 	onDelete,
 	onUpdate,
+	onSync,
 }: TaskTableProps) {
 	const [filters, setFilters] = useState({
 		abc: '',
@@ -71,12 +78,24 @@ export function TaskTable({
 		system: '',
 		p: '',
 		responsibleName: '',
+		searchQuery: '',
 	})
-	const [hideRequests, setHideRequests] = useState(false)
-	const [groupBy, setGroupBy] = useState<GroupBy>('none')
+	const [hideRequests, setHideRequests] = useState(true)
+	const [groupBy, setGroupBy] = useState<GroupBy>('priority')
 	const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
 	const [showStats, setShowStats] = useState(false)
 	const [compactMode, setCompactMode] = useState(false)
+	const [excludedTaskIds, setExcludedTaskIds] = useState<Set<string>>(() => {
+		if (typeof window !== 'undefined') {
+			const saved = localStorage.getItem('excludedTaskIds')
+			return new Set(saved ? JSON.parse(saved) : [])
+		}
+		return new Set()
+	})
+
+	useEffect(() => {
+		localStorage.setItem('excludedTaskIds', JSON.stringify(Array.from(excludedTaskIds)))
+	}, [excludedTaskIds])
 
 	const sensors = useSensors(
 		useSensor(PointerSensor, {
@@ -92,6 +111,7 @@ export function TaskTable({
 	// Фильтруем задачи
 	const filteredTasks = useMemo(() => {
 		return tasks.filter(task => {
+			if (excludedTaskIds.has(task.id)) return false
 			if (filters.abc && task.metadata.abc !== filters.abc) return false
 			if (filters.status && task.status !== filters.status) return false
 			if (filters.impact && task.metadata.impact !== filters.impact) return false
@@ -106,10 +126,20 @@ export function TaskTable({
 				!task.responsibleName?.toLowerCase().includes(filters.responsibleName.toLowerCase())
 			)
 				return false
-			// Фильтр "Заявки" - исключаем задачи со словом "Заявка" в названии
-			if (hideRequests && task.title.toLowerCase().includes('заявка')) {
-				return false
+			// Фильтр "Заявки" - исключаем задачи со словом "Заявка" в названии или тегами BUG, FIN
+			if (hideRequests) {
+				const hasHiddenTag = task.tags.some(tag => 
+					['BUG', 'FIN'].includes(tag.toUpperCase())
+				)
+				if (task.title.toLowerCase().includes('заявка') || hasHiddenTag) {
+					return false
+				}
 			}
+			if (
+				filters.searchQuery &&
+				!task.title.toLowerCase().includes(filters.searchQuery.toLowerCase())
+			)
+				return false
 			return true
 		})
 	}, [tasks, filters, hideRequests])
@@ -122,6 +152,7 @@ export function TaskTable({
 			system: '',
 			p: '',
 			responsibleName: '',
+			searchQuery: '',
 		})
 		setHideRequests(false)
 	}
@@ -262,6 +293,9 @@ export function TaskTable({
 						? `Влияние: ${task.metadata.impact}`
 						: 'Влияние: Не задано'
 					break
+				case 'priority':
+					groupKey = task.metadata.p || 'Без приоритета'
+					break
 			}
 
 			if (!groups[groupKey]) {
@@ -300,11 +334,35 @@ export function TaskTable({
 		}
 	}
 
+	const handleExclude = (taskId: string) => {
+		setExcludedTaskIds(prev => {
+			const newSet = new Set(prev)
+			newSet.add(taskId)
+			return newSet
+		})
+	}
+
 	return (
 		<div className='overflow-hidden rounded-xl border border-gray-800 bg-gradient-to-b from-gray-900 to-gray-900/95 shadow-2xl backdrop-blur-sm'>
 			{/* Панель управления */}
 			<div className='bg-gradient-to-r from-gray-800/60 via-gray-800/50 to-gray-800/60 px-4 py-3 border-b border-gray-700/50 backdrop-blur-md'>
 				<div className='flex flex-wrap items-center gap-3'>
+					{/* Синхронизация */}
+					{onSync && (
+						<button
+							onClick={onSync}
+							disabled={loading}
+							className={clsx(
+								'flex items-center gap-1.5 rounded-lg border border-blue-500/30 bg-blue-500/10 px-3 py-1.5 text-xs font-medium text-blue-400 transition hover:bg-blue-500/20 hover:text-blue-300',
+								loading && 'opacity-50 cursor-not-allowed'
+							)}
+							title='Синхронизировать с Bitrix24'
+						>
+							<RefreshCw className={clsx('h-3.5 w-3.5', loading && 'animate-spin')} />
+							Sync
+						</button>
+					)}
+
 					{/* Группировка */}
 					<div className='flex items-center gap-2'>
 						<label className='text-xs text-gray-400'>Группировать:</label>
@@ -318,7 +376,22 @@ export function TaskTable({
 							<option value='status'>По статусу</option>
 							<option value='responsible'>По ответственному</option>
 							<option value='impact'>По влиянию</option>
+							<option value='priority'>По приоритету</option>
 						</select>
+					</div>
+
+					{/* Поиск */}
+					<div className='relative ml-4'>
+						<Search className='absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-500' />
+						<input
+							type='text'
+							placeholder='Поиск по названию...'
+							value={filters.searchQuery}
+							onChange={e =>
+								setFilters(prev => ({ ...prev, searchQuery: e.target.value }))
+							}
+							className='pl-8 pr-3 py-1.5 text-xs bg-gray-900 text-gray-300 border border-gray-700 rounded-md focus:border-blue-500 focus:outline-none w-48'
+						/>
 					</div>
 
 					{/* Быстрые фильтры */}
@@ -458,7 +531,7 @@ export function TaskTable({
 								: 'Нет задач, соответствующих фильтрам.'}
 						</div>
 					) : (
-						filteredTasks.map((task) => (
+						sortedTasks.map((task) => (
 							<div
 								key={task.id}
 								className='rounded-lg bg-gradient-to-br from-gray-800/60 to-gray-800/40 border border-gray-700/50 p-4 space-y-3 hover:shadow-xl hover:border-gray-600 transition-all duration-200'
@@ -571,10 +644,10 @@ export function TaskTable({
 				<DndContext
 					sensors={sensors}
 					collisionDetection={closestCenter}
-					onDragEnd={handleDragEnd}
+					onDragEnd={isAdminMode ? handleDragEnd : undefined}
 				>
 					<SortableContext
-						items={filteredTasks.map(task => task.id)}
+						items={sortedTasks.map(task => task.id)}
 						strategy={verticalListSortingStrategy}
 					>
 						<table className='w-full border-collapse table-auto'>
@@ -763,14 +836,17 @@ export function TaskTable({
 												: 'Нет задач, соответствующих фильтрам.'}
 										</td>
 									</tr>
-								) : groupBy === 'none' ? (
-									filteredTasks.map(task => (
+								) : (groupBy === 'none' || filters.searchQuery) ? (
+									sortedTasks.map((task, index) => (
 										<SortableRow
 											key={task.id}
 											task={task}
+											index={index}
+											isAdminMode={isAdminMode}
 											onEdit={onEdit}
 											onComplete={onComplete}
 											onDelete={onDelete}
+											onExclude={() => handleExclude(task.id)}
 											compactMode={compactMode}
 											onUpdate={onUpdate}
 										/>
@@ -800,13 +876,16 @@ export function TaskTable({
 													</td>
 												</tr>
 												{!isCollapsed &&
-													groupTasks.map(task => (
+													groupTasks.map((task, index) => (
 														<SortableRow
 															key={task.id}
 															task={task}
+															index={index}
+															isAdminMode={isAdminMode}
 															onEdit={onEdit}
 															onComplete={onComplete}
 															onDelete={onDelete}
+															onExclude={() => handleExclude(task.id)}
 															compactMode={compactMode}
 															onUpdate={onUpdate}
 														/>
@@ -829,7 +908,10 @@ interface SortableRowProps {
 	onEdit: (task: TaskListItem) => void
 	onComplete: (task: TaskListItem) => void
 	onDelete: (task: TaskListItem) => void
+	onExclude: () => void
 	compactMode?: boolean
+	isAdminMode?: boolean
+	index: number
 	onUpdate?: (
 		taskId: string,
 		updates: {
@@ -857,8 +939,11 @@ function SortableRow({
 	onEdit,
 	onComplete,
 	onDelete,
+	onExclude,
 	compactMode = false,
+	isAdminMode = false,
 	onUpdate,
+	index,
 }: SortableRowProps) {
 	const {
 		attributes,
@@ -905,14 +990,19 @@ function SortableRow({
 				{task.isOverdue && (
 					<span className='absolute -left-1 top-1/2 -translate-y-1/2 w-2 h-2 bg-red-500 rounded-full animate-pulse' />
 				)}
-				{task.order}
+				{index + 1}
 			</td>
 			<td className={clsx(cellPadding, 'text-gray-500')}>
 				<button
 					type='button'
-					className='cursor-grab rounded p-2 transition hover:bg-gray-800 hover:text-white active:cursor-grabbing'
+					className={clsx(
+						'rounded p-2 transition',
+						isAdminMode 
+							? 'cursor-grab hover:bg-gray-800 hover:text-white active:cursor-grabbing' 
+							: 'cursor-default text-gray-700'
+					)}
 					{...attributes}
-					{...listeners}
+					{...(isAdminMode ? listeners : {})}
 				>
 					<GripVertical className='h-4 w-4' />
 				</button>
@@ -941,6 +1031,7 @@ function SortableRow({
 					}}
 					className={getAbcClass(task.metadata.abc)}
 					placeholder='—'
+					disabled={!isAdminMode}
 				/>
 			</td>
 			<td className={clsx(cellPadding, 'align-top')}>
@@ -995,6 +1086,7 @@ function SortableRow({
 						})
 					}}
 					placeholder='—'
+					disabled={!isAdminMode}
 				/>
 			</td>
 			<td className={clsx(cellPadding, 'text-sm text-gray-300')}>
@@ -1011,6 +1103,7 @@ function SortableRow({
 					}}
 					className={getImpactClass(task.metadata.impact)}
 					placeholder='—'
+					disabled={!isAdminMode}
 				/>
 			</td>
 			<td className={clsx(cellPadding, 'text-sm text-gray-300')}>
@@ -1026,6 +1119,7 @@ function SortableRow({
 						})
 					}}
 					placeholder='—'
+					allowCustom={true}
 				/>
 			</td>
 			<td className={clsx(cellPadding, 'text-sm text-gray-300')}>
@@ -1042,34 +1136,39 @@ function SortableRow({
 					}}
 					className={getPriorityClass(task.metadata.p)}
 					placeholder='—'
+					disabled={!isAdminMode}
 				/>
 			</td>
 			<td className={clsx(cellPadding, 'text-right')}>
 				<div className='flex justify-end gap-2'>
-					<button
-						type='button'
-						onClick={() => onComplete(task)}
-						className='group rounded-lg border border-green-600/50 px-2 py-2 text-xs font-semibold text-green-400 transition-all duration-200 hover:bg-green-600/20 hover:border-green-500 hover:shadow-lg hover:shadow-green-500/20 active:scale-95'
-						title='Отметить завершённой'
-					>
-						<Check className='h-4 w-4 transition-transform group-hover:scale-110' />
-					</button>
-					<button
-						type='button'
-						onClick={() => onEdit(task)}
-						className='group rounded-lg border border-blue-600/50 px-2 py-2 text-xs font-semibold text-blue-400 transition-all duration-200 hover:bg-blue-600/20 hover:border-blue-500 hover:shadow-lg hover:shadow-blue-500/20 active:scale-95'
-						title='Редактировать'
-					>
-						<Edit className='h-4 w-4 transition-transform group-hover:scale-110' />
-					</button>
-					<button
-						type='button'
-						onClick={() => onDelete(task)}
-						className='group rounded-lg border border-red-500/50 px-2 py-2 text-xs font-semibold text-red-400 transition-all duration-200 hover:bg-red-600/20 hover:border-red-500 hover:shadow-lg hover:shadow-red-500/20 active:scale-95'
-						title='Удалить'
-					>
-						<Trash2 className='h-4 w-4 transition-transform group-hover:scale-110' />
-					</button>
+					{isAdminMode && (
+						<>
+							<button
+								type='button'
+								onClick={() => onComplete(task)}
+								className='group rounded-lg border border-green-600/50 px-2 py-2 text-xs font-semibold text-green-400 transition-all duration-200 hover:bg-green-600/20 hover:border-green-500 hover:shadow-lg hover:shadow-green-500/20 active:scale-95'
+								title='Отметить завершённой'
+							>
+								<Check className='h-4 w-4 transition-transform group-hover:scale-110' />
+							</button>
+							<button
+								type='button'
+								onClick={() => onEdit(task)}
+								className='group rounded-lg border border-blue-600/50 px-2 py-2 text-xs font-semibold text-blue-400 transition-all duration-200 hover:bg-blue-600/20 hover:border-blue-500 hover:shadow-lg hover:shadow-blue-500/20 active:scale-95'
+								title='Редактировать'
+							>
+								<Edit className='h-4 w-4 transition-transform group-hover:scale-110' />
+							</button>
+							<button
+								type='button'
+								onClick={onExclude}
+								className='group rounded-lg border border-gray-500/50 px-2 py-2 text-xs font-semibold text-gray-400 transition-all duration-200 hover:bg-gray-600/20 hover:border-gray-500 hover:shadow-lg hover:shadow-gray-500/20 active:scale-95'
+								title='Исключить из списка'
+							>
+								<EyeOff className='h-4 w-4 transition-transform group-hover:scale-110' />
+							</button>
+						</>
+					)}
 				</div>
 			</td>
 		</tr>
@@ -1083,15 +1182,33 @@ function InlineSelect({
 	onChange,
 	className,
 	placeholder,
+	disabled,
+	allowCustom = false,
 }: {
 	value: string
 	options: string[]
 	onChange: (value: string) => void
 	className?: string
 	placeholder?: string
+	disabled?: boolean
+	allowCustom?: boolean
 }) {
 	const [isOpen, setIsOpen] = useState(false)
+	const [searchTerm, setSearchTerm] = useState('')
 	const selectRef = useRef<HTMLDivElement>(null)
+	const inputRef = useRef<HTMLInputElement>(null)
+
+	useEffect(() => {
+		if (isOpen) {
+			setSearchTerm('')
+			// Фокус на инпут поиска при открытии
+			setTimeout(() => inputRef.current?.focus(), 50)
+		}
+	}, [isOpen])
+
+	const filteredOptions = options.filter(option =>
+		option.toLowerCase().includes(searchTerm.toLowerCase())
+	)
 
 	useEffect(() => {
 		const handleClickOutside = (event: MouseEvent) => {
@@ -1113,18 +1230,33 @@ function InlineSelect({
 		<div ref={selectRef} className='relative w-full'>
 			<button
 				type='button'
-				onClick={() => setIsOpen(!isOpen)}
+				onClick={() => !disabled && setIsOpen(!isOpen)}
+				disabled={disabled}
 				className={clsx(
 					'inline-flex items-center justify-center rounded-md px-2 py-1 text-xs font-bold transition w-full min-w-[3rem] border',
 					className || 'bg-gray-800 text-gray-400 border-gray-700',
-					isOpen && 'ring-2 ring-blue-500'
+					isOpen && 'ring-2 ring-blue-500',
+					disabled && 'opacity-70 cursor-default'
 				)}
 			>
 				{value || placeholder || '—'}
 			</button>
 			{isOpen && (
-				<div className='absolute z-50 mt-1 w-full rounded-md bg-gray-800 border border-gray-700 shadow-lg'>
-					<div className='py-1'>
+				<div className='absolute z-50 mt-1 w-full min-w-[12rem] rounded-md bg-gray-800 border border-gray-700 shadow-lg overflow-hidden'>
+					{(allowCustom || options.length > 5) && (
+						<div className='p-2 border-b border-gray-700 bg-gray-800'>
+							<input
+								ref={inputRef}
+								type='text'
+								value={searchTerm}
+								onChange={e => setSearchTerm(e.target.value)}
+								className='w-full bg-gray-900 border border-gray-600 rounded px-2 py-1 text-xs text-white focus:border-blue-500 outline-none'
+								placeholder='Поиск...'
+								onClick={e => e.stopPropagation()}
+							/>
+						</div>
+					)}
+					<div className='max-h-60 overflow-y-auto py-1'>
 						<button
 							type='button'
 							onClick={() => {
@@ -1135,7 +1267,7 @@ function InlineSelect({
 						>
 							{placeholder || '—'}
 						</button>
-						{options.map(option => (
+						{filteredOptions.map(option => (
 							<button
 								key={option}
 								type='button'
@@ -1153,6 +1285,25 @@ function InlineSelect({
 								{option}
 							</button>
 						))}
+						{allowCustom &&
+							searchTerm &&
+							!filteredOptions.some(
+								opt => opt.toLowerCase() === searchTerm.toLowerCase()
+							) && (
+								<button
+									type='button'
+									onClick={() => {
+										onChange(searchTerm)
+										setIsOpen(false)
+									}}
+									className='w-full text-left px-3 py-1.5 text-xs text-blue-400 hover:bg-gray-700 font-medium border-t border-gray-700 mt-1'
+								>
+									+ Добавить «{searchTerm}»
+								</button>
+							)}
+						{filteredOptions.length === 0 && !searchTerm && (
+							<div className='px-3 py-1.5 text-xs text-gray-500'>Нет опций</div>
+						)}
 					</div>
 				</div>
 			)}
@@ -1164,10 +1315,12 @@ function InlineTextInput({
 	value,
 	onChange,
 	placeholder,
+	disabled,
 }: {
 	value: string
 	onChange: (value: string) => void
 	placeholder?: string
+	disabled?: boolean
 }) {
 	const [isEditing, setIsEditing] = useState(false)
 	const [tempValue, setTempValue] = useState(value)
@@ -1216,8 +1369,13 @@ function InlineTextInput({
 	return (
 		<button
 			type='button'
-			onClick={() => setIsEditing(true)}
-			className='w-full text-left px-2 py-1 text-xs text-gray-300 hover:bg-gray-800 rounded-md transition border border-transparent hover:border-gray-700'
+			onClick={() => !disabled && setIsEditing(true)}
+			disabled={disabled}
+			className={clsx(
+				'w-full text-left px-2 py-1 text-xs text-gray-300 rounded-md transition border border-transparent',
+				!disabled && 'hover:bg-gray-800 hover:border-gray-700',
+				disabled && 'cursor-default'
+			)}
 		>
 			{value || placeholder || '—'}
 		</button>
@@ -1228,10 +1386,12 @@ function InlineNumberInput({
 	value,
 	onChange,
 	placeholder,
+	disabled,
 }: {
 	value: number | string
 	onChange: (value: string) => void
 	placeholder?: string
+	disabled?: boolean
 }) {
 	const [isEditing, setIsEditing] = useState(false)
 	const [tempValue, setTempValue] = useState(String(value || ''))
@@ -1280,8 +1440,13 @@ function InlineNumberInput({
 	return (
 		<button
 			type='button'
-			onClick={() => setIsEditing(true)}
-			className='w-full text-center px-2 py-1 text-xs text-gray-200 hover:bg-gray-800 rounded-md transition border border-transparent hover:border-gray-700'
+			onClick={() => !disabled && setIsEditing(true)}
+			disabled={disabled}
+			className={clsx(
+				'w-full text-center px-2 py-1 text-xs text-gray-200 rounded-md transition border border-transparent',
+				!disabled && 'hover:bg-gray-800 hover:border-gray-700',
+				disabled && 'cursor-default'
+			)}
 		>
 			{value || placeholder || '—'}
 		</button>

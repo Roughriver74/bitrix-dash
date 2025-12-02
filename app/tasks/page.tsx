@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Plus, RefreshCw } from 'lucide-react'
+import { Plus, RefreshCw, Lock, Unlock } from 'lucide-react'
 import { TaskForm, TaskFormValues } from '@/components/tasks/TaskForm'
 import { TaskTable } from '@/components/tasks/TaskTable'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
@@ -38,12 +38,14 @@ function TasksPageContent() {
 	const [formMode, setFormMode] = useState<TaskFormMode>('create')
 	const [selectedTask, setSelectedTask] = useState<TaskListItem | null>(null)
 	const [submitting, setSubmitting] = useState<boolean>(false)
+	const [isAdminMode, setIsAdminMode] = useState<boolean>(false)
 
-	const fetchTasks = useCallback(async () => {
+	const fetchTasks = useCallback(async (forceSync = false) => {
 		try {
 			setLoading(true)
 			setError(null)
-			const response = await fetch('/api/tasks')
+			const url = forceSync ? '/api/tasks?forceSync=true' : '/api/tasks'
+			const response = await fetch(url)
 			if (!response.ok) {
 				throw new Error(await extractError(response))
 			}
@@ -67,7 +69,24 @@ function TasksPageContent() {
 		fetchTasks()
 	}, [fetchTasks])
 
+	const handleSync = () => {
+		fetchTasks(true)
+	}
+
 	const activeTasks = useMemo(() => sortByOrder(tasks), [tasks])
+
+	const handleAdminToggle = () => {
+		if (isAdminMode) {
+			setIsAdminMode(false)
+		} else {
+			const password = window.prompt('Введите пароль администратора:')
+			if (password === 'admin') {
+				setIsAdminMode(true)
+			} else if (password !== null) {
+				alert('Неверный пароль')
+			}
+		}
+	}
 
 	const handleOpenCreate = () => {
 		setFormMode('create')
@@ -268,7 +287,28 @@ function TasksPageContent() {
 					<div className='flex flex-wrap gap-3'>
 						<button
 							type='button'
-							onClick={fetchTasks}
+							onClick={handleAdminToggle}
+							className={`inline-flex items-center gap-2 rounded-lg border px-4 py-2 text-sm font-semibold transition-all duration-200 active:scale-95 ${
+								isAdminMode
+									? 'border-red-600/40 bg-red-600/10 text-red-200 hover:bg-red-600/20 hover:border-red-500 hover:shadow-lg hover:shadow-red-500/20'
+									: 'border-gray-600/40 bg-gray-600/10 text-gray-200 hover:bg-gray-600/20 hover:border-gray-500'
+							}`}
+						>
+							{isAdminMode ? (
+								<>
+									<Unlock className='h-4 w-4' />
+									Админ: ВКЛ
+								</>
+							) : (
+								<>
+									<Lock className='h-4 w-4' />
+									Админ: ВЫКЛ
+								</>
+							)}
+						</button>
+						<button
+							type='button'
+							onClick={() => fetchTasks(false)}
 							className='inline-flex items-center gap-2 rounded-lg border border-blue-600/40 bg-blue-600/10 px-4 py-2 text-sm font-semibold text-blue-200 transition-all duration-200 hover:bg-blue-600/20 hover:border-blue-500 hover:shadow-lg hover:shadow-blue-500/20 active:scale-95'
 							disabled={loading}
 						>
@@ -277,14 +317,16 @@ function TasksPageContent() {
 							/>
 							Обновить
 						</button>
-						<button
-							type='button'
-							onClick={handleOpenCreate}
-							className='inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-green-600 to-emerald-600 px-4 py-2 text-sm font-semibold text-white transition-all duration-200 hover:from-green-500 hover:to-emerald-500 hover:shadow-lg hover:shadow-green-500/30 active:scale-95'
-						>
-							<Plus className='h-4 w-4' />
-							Новая задача
-						</button>
+						{isAdminMode && (
+							<button
+								type='button'
+								onClick={handleOpenCreate}
+								className='inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-green-600 to-emerald-600 px-4 py-2 text-sm font-semibold text-white transition-all duration-200 hover:from-green-500 hover:to-emerald-500 hover:shadow-lg hover:shadow-green-500/30 active:scale-95'
+							>
+								<Plus className='h-4 w-4' />
+								Новая задача
+							</button>
+						)}
 					</div>
 				</header>
 
@@ -297,6 +339,7 @@ function TasksPageContent() {
 				<TaskTable
 					tasks={activeTasks}
 					loading={loading}
+					isAdminMode={isAdminMode}
 					onReorder={handleReorder}
 					onEdit={handleEdit}
 					onComplete={handleComplete}
@@ -333,6 +376,7 @@ function TasksPageContent() {
 							)
 						}
 					}}
+					onSync={handleSync}
 				/>
 			</div>
 

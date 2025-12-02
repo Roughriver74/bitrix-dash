@@ -34,6 +34,7 @@ export const SYSTEM_MAPPING: Record<string, string> = {
   'documentation': 'Документация',
   'безопасность': 'Безопасность',
   'security': 'Безопасность',
+  'bi': 'BI',
 };
 
 /**
@@ -57,6 +58,7 @@ export const AVAILABLE_SYSTEMS = [
   'Тестирование',
   'Документация',
   'Безопасность',
+  'BI',
   'Другое',
 ].sort();
 
@@ -75,6 +77,15 @@ export function normalizeSystemName(rawName: string | undefined | null): string 
   // Прямое совпадение
   if (SYSTEM_MAPPING[normalized]) {
     return SYSTEM_MAPPING[normalized];
+  }
+
+  // Обработка разделителя @ (например, Bi@WEST -> BI)
+  if (normalized.includes('@')) {
+    const parts = normalized.split('@');
+    const firstPart = parts[0].trim();
+    if (SYSTEM_MAPPING[firstPart]) {
+      return SYSTEM_MAPPING[firstPart];
+    }
   }
 
   // Поиск по частичному совпадению
