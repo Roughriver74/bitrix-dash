@@ -47,6 +47,7 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
 # Copy Prisma schema and entrypoint
 COPY --chown=nextjs:nodejs prisma ./prisma
+COPY --chown=nextjs:nodejs prisma.config.js ./
 COPY --chown=nextjs:nodejs docker-entrypoint.sh ./
 
 # Create directory for SQLite database
