@@ -50,6 +50,9 @@ COPY --chown=nextjs:nodejs prisma ./prisma
 COPY --chown=nextjs:nodejs prisma.config.js ./
 COPY --chown=nextjs:nodejs docker-entrypoint.sh ./
 
+# Install Prisma dependencies for runtime
+RUN npm install prisma @prisma/config
+
 # Create directory for SQLite database
 RUN mkdir -p /app/db && chown nextjs:nodejs /app/db
 
