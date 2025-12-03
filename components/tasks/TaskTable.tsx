@@ -85,7 +85,6 @@ export function TaskTable({
 	const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
 	const [showStats, setShowStats] = useState(false)
 	const [compactMode, setCompactMode] = useState(false)
-	const [visibleTasksCount, setVisibleTasksCount] = useState(50) // Начальное количество видимых задач
 	const [excludedTaskIds, setExcludedTaskIds] = useState<Set<string>>(() => {
 		if (typeof window !== 'undefined') {
 			const saved = localStorage.getItem('excludedTaskIds')
@@ -93,39 +92,10 @@ export function TaskTable({
 		}
 		return new Set()
 	})
-	const loadMoreRef = useRef<HTMLDivElement>(null)
 
 	useEffect(() => {
 		localStorage.setItem('excludedTaskIds', JSON.stringify(Array.from(excludedTaskIds)))
 	}, [excludedTaskIds])
-
-	// Ленивая загрузка при прокрутке
-	useEffect(() => {
-		const observer = new IntersectionObserver(
-			(entries) => {
-				if (entries[0].isIntersecting && visibleTasksCount < sortedTasks.length) {
-					// Загружаем еще 50 задач
-					setVisibleTasksCount(prev => Math.min(prev + 50, sortedTasks.length))
-				}
-			},
-			{ threshold: 0.1 }
-		)
-
-		if (loadMoreRef.current) {
-			observer.observe(loadMoreRef.current)
-		}
-
-		return () => {
-			if (loadMoreRef.current) {
-				observer.unobserve(loadMoreRef.current)
-			}
-		}
-	}, [visibleTasksCount, sortedTasks.length])
-
-	// Сбрасываем счетчик при изменении фильтров
-	useEffect(() => {
-		setVisibleTasksCount(50)
-	}, [filters, hideRequests, groupBy])
 
 	const sensors = useSensors(
 		useSensor(PointerSensor, {
@@ -217,11 +187,6 @@ export function TaskTable({
 
 		return sorted.map(item => item.task)
 	}, [filteredTasks])
-
-	// Ограничиваем количество видимых задач для ленивой загрузки
-	const visibleTasks = useMemo(() => {
-		return sortedTasks.slice(0, visibleTasksCount)
-	}, [sortedTasks, visibleTasksCount])
 
 	const handleDragEnd = (event: DragEndEvent) => {
 		const { active, over } = event
@@ -341,29 +306,6 @@ export function TaskTable({
 
 		return groups
 	}, [sortedTasks, groupBy])
-
-	// Ограничиваем количество видимых задач в группах для ленивой загрузки
-	const visibleGroupedTasks = useMemo(() => {
-		if (groupBy === 'none') {
-			return { 'Все задачи': visibleTasks }
-		}
-
-		const visibleGroups: Record<string, TaskListItem[]> = {}
-		let totalVisible = 0
-
-		for (const [groupKey, groupTasks] of Object.entries(groupedTasks)) {
-			if (totalVisible >= visibleTasksCount) {
-				visibleGroups[groupKey] = []
-				continue
-			}
-
-			const remaining = visibleTasksCount - totalVisible
-			visibleGroups[groupKey] = groupTasks.slice(0, remaining)
-			totalVisible += visibleGroups[groupKey].length
-		}
-
-		return visibleGroups
-	}, [groupedTasks, visibleTasksCount, groupBy])
 
 	const toggleGroup = (groupKey: string) => {
 		setCollapsedGroups(prev => {
@@ -895,60 +837,46 @@ export function TaskTable({
 										</td>
 									</tr>
 								) : (groupBy === 'none' || filters.searchQuery) ? (
-									<>
-										{visibleTasks.map((task, index) => (
-											<SortableRow
-												key={task.id}
-												task={task}
-												index={index}
-												isAdminMode={isAdminMode}
-												onEdit={onEdit}
-												onComplete={onComplete}
-												onDelete={onDelete}
-												onExclude={() => handleExclude(task.id)}
-												compactMode={compactMode}
-												onUpdate={onUpdate}
-											/>
-										))}
-										{visibleTasksCount < sortedTasks.length && (
-											<tr ref={loadMoreRef}>
-												<td colSpan={12} className='px-4 py-4 text-center'>
-													<div className='text-sm text-gray-400'>
-														Загружено {visibleTasksCount} из {sortedTasks.length} задач
-													</div>
-												</td>
-											</tr>
-										)}
-									</>
+									sortedTasks.map((task, index) => (
+										<SortableRow
+											key={task.id}
+											task={task}
+											index={index}
+											isAdminMode={isAdminMode}
+											onEdit={onEdit}
+											onComplete={onComplete}
+											onDelete={onDelete}
+											onExclude={() => handleExclude(task.id)}
+											compactMode={compactMode}
+											onUpdate={onUpdate}
+										/>
+									))
 								) : (
-									<>
-										{Object.entries(visibleGroupedTasks).map(([groupKey, visibleGroupTasks]) => {
-											const isCollapsed = collapsedGroups.has(groupKey)
-											const allGroupTasks = groupedTasks[groupKey] || []
-											const hasMoreInGroup = visibleGroupTasks.length < allGroupTasks.length
-											
-											return (
-												<React.Fragment key={`group-${groupKey}`}>
-													<tr className='bg-gray-800/60 sticky top-[88px] z-[5] border-t-2 border-gray-700'>
-														<td colSpan={12} className='px-4 py-2'>
-															<button
-																onClick={() => toggleGroup(groupKey)}
-																className='flex items-center gap-2 text-sm font-semibold text-gray-200 hover:text-white transition w-full'
-															>
-																{isCollapsed ? (
-																	<ChevronRight className='h-4 w-4' />
-																) : (
-																	<ChevronDown className='h-4 w-4' />
-																)}
-																<span>{groupKey}</span>
-																<span className='text-xs text-gray-400 ml-2'>
-																	({allGroupTasks.length}{' '}
-																	{allGroupTasks.length === 1 ? 'задача' : 'задач'})
-																</span>
-															</button>
-														</td>
-													</tr>
-													{!isCollapsed && visibleGroupTasks.map((task, index) => (
+									Object.entries(groupedTasks).map(([groupKey, groupTasks]) => {
+										const isCollapsed = collapsedGroups.has(groupKey)
+										return (
+											<React.Fragment key={`group-${groupKey}`}>
+												<tr className='bg-gray-800/60 sticky top-[88px] z-[5] border-t-2 border-gray-700'>
+													<td colSpan={12} className='px-4 py-2'>
+														<button
+															onClick={() => toggleGroup(groupKey)}
+															className='flex items-center gap-2 text-sm font-semibold text-gray-200 hover:text-white transition w-full'
+														>
+															{isCollapsed ? (
+																<ChevronRight className='h-4 w-4' />
+															) : (
+																<ChevronDown className='h-4 w-4' />
+															)}
+															<span>{groupKey}</span>
+															<span className='text-xs text-gray-400 ml-2'>
+																({groupTasks.length}{' '}
+																{groupTasks.length === 1 ? 'задача' : 'задач'})
+															</span>
+														</button>
+													</td>
+												</tr>
+												{!isCollapsed &&
+													groupTasks.map((task, index) => (
 														<SortableRow
 															key={task.id}
 															task={task}
@@ -962,19 +890,9 @@ export function TaskTable({
 															onUpdate={onUpdate}
 														/>
 													))}
-												</React.Fragment>
-											)
-										})}
-										{visibleTasksCount < sortedTasks.length && (
-											<tr ref={loadMoreRef}>
-												<td colSpan={12} className='px-4 py-4 text-center'>
-													<div className='text-sm text-gray-400'>
-														Загружено {visibleTasksCount} из {sortedTasks.length} задач
-													</div>
-												</td>
-											</tr>
-										)}
-									</>
+											</React.Fragment>
+										)
+									})
 								)}
 							</tbody>
 						</table>
