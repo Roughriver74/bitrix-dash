@@ -1,6 +1,6 @@
 import { BitrixClient } from '../client';
 import { BitrixTask } from '../types';
-import { TaskMetadata, mergeTagsWithMetadata } from '@/lib/tasks/metadata';
+import { TaskMetadata, mergeTagsWithMetadata, parseTaskMetadata } from '@/lib/tasks/metadata';
 import { cache } from '@/lib/cache';
 import { normalizeSystemName } from '@/lib/tasks/systems';
 
@@ -258,24 +258,38 @@ export class TaskService {
 
     // Если обновляются метаданные или теги, нужно получить текущие теги задачи
     if (metadata || tags || otherTags) {
-      let baseTags: string[] = [];
+      let finalTags: string[] = [];
       
       if (tags) {
-        // Если переданы tags напрямую, используем их
-        baseTags = tags;
-      } else if (otherTags) {
-        // Если переданы otherTags, используем их (они уже без метаданных)
-        baseTags = otherTags;
+        // Если переданы tags напрямую, используем их (полная замена)
+        finalTags = tags;
       } else {
-        // Если переданы только метаданные, получаем текущие теги задачи
+        // Получаем текущие теги задачи
         const currentTask = await this.client.call<any>('tasks.task.get', {
           taskId,
         });
         const currentTags = currentTask?.task?.TAGS || currentTask?.result?.task?.TAGS || [];
-        baseTags = Array.isArray(currentTags) ? currentTags : [];
+        const currentTagsArray = Array.isArray(currentTags) 
+          ? currentTags.map((t: any) => typeof t === 'string' ? t : (t.title || t.name || String(t)))
+          : [];
+        
+        // Разделяем текущие теги на метаданные и обычные теги
+        const { metadata: currentMetadata, otherTags: currentOtherTags } = parseTaskMetadata(currentTagsArray);
+        
+        // Объединяем метаданные: новые перезаписывают старые
+        const mergedMetadata = {
+          ...currentMetadata,
+          ...metadata,
+        };
+        
+        // Объединяем otherTags: если переданы новые, используем их, иначе оставляем старые
+        const mergedOtherTags = otherTags !== undefined ? otherTags : currentOtherTags;
+        
+        // Объединяем все обратно
+        finalTags = mergeTagsWithMetadata(mergedOtherTags, mergedMetadata);
       }
       
-      fields.TAGS = mergeTagsWithMetadata(baseTags, metadata);
+      fields.TAGS = finalTags;
     }
 
     if (Object.keys(fields).length === 0) {

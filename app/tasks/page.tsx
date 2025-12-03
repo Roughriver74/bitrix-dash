@@ -5,6 +5,7 @@ import { Plus, RefreshCw, Lock, Unlock } from 'lucide-react'
 import { TaskForm, TaskFormValues } from '@/components/tasks/TaskForm'
 import { TaskTable } from '@/components/tasks/TaskTable'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
+import { buildMetadataTags } from '@/lib/tasks/metadata'
 import {
 	TaskFormMode,
 	TaskListItem,
@@ -41,6 +42,7 @@ function TasksPageContent() {
 	const [isAdminMode, setIsAdminMode] = useState<boolean>(false)
 	const [autoRefresh, setAutoRefresh] = useState<boolean>(true)
 	const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
+	const [isUpdatingTask, setIsUpdatingTask] = useState<boolean>(false)
 
 	const fetchTasks = useCallback(async (forceSync = false, silent = false) => {
 		try {
@@ -81,15 +83,18 @@ function TasksPageContent() {
 
 	// Автоматическое обновление каждые 30 секунд
 	useEffect(() => {
-		if (!autoRefresh) return
+		if (!autoRefresh || isUpdatingTask) return
 
 		const interval = setInterval(() => {
-			// Обновляем без синхронизации (тихо, без показа загрузки)
-			fetchTasks(false, true)
+			// Пропускаем обновление, если идет обновление задачи
+			if (!isUpdatingTask) {
+				// Обновляем без синхронизации (тихо, без показа загрузки)
+				fetchTasks(false, true)
+			}
 		}, 30000) // 30 секунд
 
 		return () => clearInterval(interval)
-	}, [autoRefresh, fetchTasks])
+	}, [autoRefresh, fetchTasks, isUpdatingTask])
 
 	const handleSync = () => {
 		fetchTasks(true, false)
@@ -406,6 +411,42 @@ function TasksPageContent() {
 					onDelete={handleDelete}
 					onUpdate={async (taskId, updates) => {
 						try {
+							setIsUpdatingTask(true)
+							
+							// Оптимистичное обновление - сразу обновляем задачу в списке
+							const currentTask = tasks.find(t => t.id === taskId)
+							if (currentTask) {
+								// Объединяем метаданные
+								const mergedMetadata = {
+									...currentTask.metadata,
+									...updates.metadata,
+								}
+								
+								// Объединяем otherTags: если переданы новые, используем их, иначе оставляем старые
+								const mergedOtherTags = updates.otherTags !== undefined 
+									? updates.otherTags 
+									: currentTask.otherTags
+								
+								// Объединяем все теги (метаданные + otherTags)
+								// Используем buildMetadataTags для метаданных и добавляем otherTags
+								const metadataTags = buildMetadataTags(mergedMetadata)
+								const allTags = [...metadataTags, ...mergedOtherTags]
+								
+								const optimisticTask = {
+									...currentTask,
+									metadata: mergedMetadata,
+									otherTags: mergedOtherTags,
+									tags: allTags,
+								}
+								
+								// Временно обновляем задачу в списке
+								setTasks(prev =>
+									sortByOrder(
+										prev.map(task => (task.id === taskId ? optimisticTask : task))
+									)
+								)
+							}
+
 							const response = await fetch('/api/tasks', {
 								method: 'PATCH',
 								headers: { 'Content-Type': 'application/json' },
@@ -427,6 +468,7 @@ function TasksPageContent() {
 								if (data.task.status === '5' || data.task.status === '6') {
 									setTasks(prev => prev.filter(task => task.id !== taskId))
 								} else {
+									// Обновляем задачу с сервера и пересортировываем
 									setTasks(prev =>
 										sortByOrder(
 											prev.map(task => (task.id === data.task.id ? data.task : task))
@@ -439,6 +481,10 @@ function TasksPageContent() {
 							setError(
 								err instanceof Error ? err.message : 'Не удалось обновить задачу'
 							)
+							// В случае ошибки перезагружаем список задач
+							fetchTasks(false, true)
+						} finally {
+							setIsUpdatingTask(false)
 						}
 					}}
 					onSync={handleSync}
