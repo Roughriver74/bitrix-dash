@@ -277,4 +277,11 @@ export class BitrixSyncService {
     const taskService = new TaskService(this.client);
     return await taskService.enrichTasksData(tasks);
   }
+
+  /**
+   * Сохраняет одну задачу в БД (публичный метод для обновления после изменения)
+   */
+  async saveTaskToDb(task: BitrixTask, usersMap: Map<string, string> = new Map()): Promise<void> {
+    await this.saveTasksToDb([task], usersMap);
+  }
 }

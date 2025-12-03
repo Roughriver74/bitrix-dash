@@ -19,6 +19,7 @@ interface TasksResponse {
 		id: string
 		name: string
 	}
+	systems?: string[]
 }
 
 export default function TasksPage() {
@@ -33,6 +34,7 @@ function TasksPageContent() {
 	const [tasks, setTasks] = useState<TaskListItem[]>([])
 	const [users, setUsers] = useState<UserOption[]>([])
 	const [departmentName, setDepartmentName] = useState<string>('')
+	const [systems, setSystems] = useState<string[]>([])
 	const [loading, setLoading] = useState<boolean>(true)
 	const [error, setError] = useState<string | null>(null)
 	const [formOpen, setFormOpen] = useState(false)
@@ -60,6 +62,9 @@ function TasksPageContent() {
 			setTasks(sortByOrder(data.tasks))
 			setUsers(data.users)
 			setDepartmentName(data.department?.name ?? '')
+			if (data.systems) {
+				setSystems(data.systems)
+			}
 			setLastUpdate(new Date())
 			
 		} catch (err) {
@@ -405,6 +410,7 @@ function TasksPageContent() {
 					tasks={activeTasks}
 					loading={loading}
 					isAdminMode={isAdminMode}
+					systems={systems}
 					onReorder={handleReorder}
 					onEdit={handleEdit}
 					onComplete={handleComplete}

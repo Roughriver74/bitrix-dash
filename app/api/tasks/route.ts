@@ -153,6 +153,12 @@ export async function GET(request: Request) {
 
     console.log(`📦 Получено ${dbTasks.length} задач из БД`);
 
+    // Получаем все системы из БД для выпадающего списка
+    const dbSystems = await prisma.system.findMany({
+      orderBy: { name: 'asc' }
+    });
+    const systemNames = dbSystems.map(s => s.name);
+
     // Маппинг задач из БД в формат API
     const payloadTasks = dbTasks.map((task: any, index: number) => {
       const tags = task.tags.map((t: any) => t.tag.name);
@@ -205,6 +211,7 @@ export async function GET(request: Request) {
         id: department.ID,
         name: department.NAME,
       },
+      systems: systemNames,
     });
   } catch (error) {
     console.error('❌ Tasks GET error:', error);
@@ -342,6 +349,12 @@ export async function PATCH(request: Request) {
         { status: 500 },
       );
     }
+
+    // Сохраняем обновленную задачу в БД
+    console.log('💾 Сохранение обновленной задачи в БД...');
+    const syncService = new BitrixSyncService(client);
+    await syncService.saveTaskToDb(updatedTask, usersMap);
+    console.log('✅ Задача сохранена в БД');
 
     const taskPayload = prepareTasksPayload([updatedTask], usersMap)[0];
 

@@ -30,6 +30,7 @@ interface TaskTableProps {
 	tasks: TaskListItem[]
 	loading?: boolean
 	isAdminMode?: boolean
+	systems?: string[]
 	onReorder: (tasks: TaskListItem[]) => void
 	onEdit: (task: TaskListItem) => void
 	onComplete: (task: TaskListItem) => void
@@ -64,6 +65,7 @@ export function TaskTable({
 	tasks,
 	loading,
 	isAdminMode = false,
+	systems = [],
 	onReorder,
 	onEdit,
 	onComplete,
@@ -92,6 +94,12 @@ export function TaskTable({
 		}
 		return new Set()
 	})
+
+	// Объединяем статический список систем с системами из БД
+	const availableSystems = useMemo(() => {
+		const combined = new Set([...AVAILABLE_SYSTEMS, ...systems])
+		return Array.from(combined).sort()
+	}, [systems])
 
 	useEffect(() => {
 		localStorage.setItem('excludedTaskIds', JSON.stringify(Array.from(excludedTaskIds)))
@@ -1109,7 +1117,7 @@ function SortableRow({
 			<td className={clsx(cellPadding, 'text-sm text-gray-300')}>
 				<InlineSelect
 					value={task.metadata.system ?? ''}
-					options={AVAILABLE_SYSTEMS}
+					options={availableSystems}
 					onChange={value => {
 						onUpdate?.(task.id, {
 							metadata: {
