@@ -321,7 +321,7 @@ export async function PATCH(request: Request) {
       );
     }
 
-    const { taskService, usersMap } = await getTaskServiceContext(true);
+    const { taskService, client, usersMap } = await getTaskServiceContext(true);
 
     const updateOptions: UpdateTaskOptions = {
       metadata: updatePayload.metadata,
