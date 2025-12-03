@@ -851,6 +851,7 @@ export function TaskTable({
 											task={task}
 											index={index}
 											isAdminMode={isAdminMode}
+											availableSystems={availableSystems}
 											onEdit={onEdit}
 											onComplete={onComplete}
 											onDelete={onDelete}
@@ -890,6 +891,7 @@ export function TaskTable({
 															task={task}
 															index={index}
 															isAdminMode={isAdminMode}
+															availableSystems={availableSystems}
 															onEdit={onEdit}
 															onComplete={onComplete}
 															onDelete={onDelete}
@@ -920,6 +922,7 @@ interface SortableRowProps {
 	compactMode?: boolean
 	isAdminMode?: boolean
 	index: number
+	availableSystems?: string[]
 	onUpdate?: (
 		taskId: string,
 		updates: {
@@ -952,6 +955,7 @@ function SortableRow({
 	isAdminMode = false,
 	onUpdate,
 	index,
+	availableSystems = AVAILABLE_SYSTEMS,
 }: SortableRowProps) {
 	const {
 		attributes,
