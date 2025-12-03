@@ -39,10 +39,14 @@ function TasksPageContent() {
 	const [selectedTask, setSelectedTask] = useState<TaskListItem | null>(null)
 	const [submitting, setSubmitting] = useState<boolean>(false)
 	const [isAdminMode, setIsAdminMode] = useState<boolean>(false)
+	const [autoRefresh, setAutoRefresh] = useState<boolean>(true)
+	const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
 
-	const fetchTasks = useCallback(async (forceSync = false) => {
+	const fetchTasks = useCallback(async (forceSync = false, silent = false) => {
 		try {
-			setLoading(true)
+			if (!silent) {
+				setLoading(true)
+			}
 			setError(null)
 			const url = forceSync ? '/api/tasks?forceSync=true' : '/api/tasks'
 			const response = await fetch(url)
@@ -54,23 +58,49 @@ function TasksPageContent() {
 			setTasks(sortByOrder(data.tasks))
 			setUsers(data.users)
 			setDepartmentName(data.department?.name ?? '')
+			setLastUpdate(new Date())
 			
 		} catch (err) {
 			console.error(err)
-			setError(
-				err instanceof Error ? err.message : 'Не удалось загрузить задачи'
-			)
+			if (!silent) {
+				setError(
+					err instanceof Error ? err.message : 'Не удалось загрузить задачи'
+				)
+			}
 		} finally {
-			setLoading(false)
+			if (!silent) {
+				setLoading(false)
+			}
 		}
 	}, [])
 
+	// Первоначальная загрузка
 	useEffect(() => {
 		fetchTasks()
 	}, [fetchTasks])
 
+	// Автоматическое обновление каждые 30 секунд
+	useEffect(() => {
+		if (!autoRefresh) return
+
+		const interval = setInterval(() => {
+			// Обновляем без синхронизации (тихо, без показа загрузки)
+			fetchTasks(false, true)
+		}, 30000) // 30 секунд
+
+		return () => clearInterval(interval)
+	}, [autoRefresh, fetchTasks])
+
 	const handleSync = () => {
-		fetchTasks(true)
+		fetchTasks(true, false)
+	}
+
+	const handleRefresh = () => {
+		fetchTasks(false, false)
+	}
+
+	const toggleAutoRefresh = () => {
+		setAutoRefresh(prev => !prev)
 	}
 
 	const activeTasks = useMemo(() => sortByOrder(tasks), [tasks])
@@ -221,7 +251,16 @@ function TasksPageContent() {
 				throw new Error(await extractError(response))
 			}
 
+			// Удаляем задачу из списка (она завершена)
 			setTasks(prev => prev.filter(item => item.id !== task.id))
+			
+			// Если автообновление включено, через несколько секунд обновим список
+			// чтобы убедиться, что все изменения синхронизированы
+			if (autoRefresh) {
+				setTimeout(() => {
+					fetchTasks(false, true)
+				}, 2000)
+			}
 		} catch (err) {
 			console.error(err)
 			setError(
@@ -282,6 +321,11 @@ function TasksPageContent() {
 						<p className='mt-2 text-sm md:text-base text-gray-400 max-w-2xl'>
 							Управляйте приоритетами, тегами и статусами задач прямо из
 							дашборда. Количество активных задач: <span className='font-semibold text-blue-400'>{activeCount}</span>
+							{lastUpdate && (
+								<span className='ml-2 text-xs text-gray-500'>
+									(обновлено: {lastUpdate.toLocaleTimeString('ru-RU')})
+								</span>
+							)}
 						</p>
 					</div>
 					<div className='flex flex-wrap gap-3'>
@@ -308,9 +352,25 @@ function TasksPageContent() {
 						</button>
 						<button
 							type='button'
-							onClick={() => fetchTasks(false)}
+							onClick={toggleAutoRefresh}
+							className={`inline-flex items-center gap-2 rounded-lg border px-4 py-2 text-sm font-semibold transition-all duration-200 active:scale-95 ${
+								autoRefresh
+									? 'border-green-600/40 bg-green-600/10 text-green-200 hover:bg-green-600/20 hover:border-green-500 hover:shadow-lg hover:shadow-green-500/20'
+									: 'border-gray-600/40 bg-gray-600/10 text-gray-200 hover:bg-gray-600/20 hover:border-gray-500'
+							}`}
+							title={autoRefresh ? 'Автообновление включено (каждые 30 сек)' : 'Автообновление выключено'}
+						>
+							<RefreshCw
+								className={autoRefresh ? 'h-4 w-4 animate-spin' : 'h-4 w-4'}
+							/>
+							{autoRefresh ? 'Авто: ВКЛ' : 'Авто: ВЫКЛ'}
+						</button>
+						<button
+							type='button'
+							onClick={handleRefresh}
 							className='inline-flex items-center gap-2 rounded-lg border border-blue-600/40 bg-blue-600/10 px-4 py-2 text-sm font-semibold text-blue-200 transition-all duration-200 hover:bg-blue-600/20 hover:border-blue-500 hover:shadow-lg hover:shadow-blue-500/20 active:scale-95'
 							disabled={loading}
+							title={lastUpdate ? `Последнее обновление: ${lastUpdate.toLocaleTimeString('ru-RU')}` : 'Обновить список задач'}
 						>
 							<RefreshCw
 								className={loading ? 'h-4 w-4 animate-spin' : 'h-4 w-4'}
@@ -363,11 +423,16 @@ function TasksPageContent() {
 
 							const data = await response.json()
 							if (data.task) {
-								setTasks(prev =>
-									sortByOrder(
-										prev.map(task => (task.id === data.task.id ? data.task : task))
+								// Если задача завершена (статус 5) или отложена (6), удаляем её из списка
+								if (data.task.status === '5' || data.task.status === '6') {
+									setTasks(prev => prev.filter(task => task.id !== taskId))
+								} else {
+									setTasks(prev =>
+										sortByOrder(
+											prev.map(task => (task.id === data.task.id ? data.task : task))
+										)
 									)
-								)
+								}
 							}
 						} catch (err) {
 							console.error(err)
