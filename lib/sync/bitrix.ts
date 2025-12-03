@@ -281,7 +281,16 @@ export class BitrixSyncService {
   /**
    * Сохраняет одну задачу в БД (публичный метод для обновления после изменения)
    */
-  async saveTaskToDb(task: BitrixTask, usersMap: Map<string, string> = new Map()): Promise<void> {
-    await this.saveTasksToDb([task], usersMap);
+  async saveTaskToDb(task: BitrixTask, usersMap: Map<string, string> | Record<string, { name: string }> = new Map()): Promise<void> {
+    // Преобразуем usersMap в Map, если это объект
+    let usersMapConverted: Map<string, string>;
+    if (usersMap instanceof Map) {
+      usersMapConverted = usersMap;
+    } else {
+      usersMapConverted = new Map(
+        Object.entries(usersMap).map(([id, user]) => [id, user.name])
+      );
+    }
+    await this.saveTasksToDb([task], usersMapConverted);
   }
 }
