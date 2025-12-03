@@ -45,6 +45,7 @@ function TasksPageContent() {
 	const [autoRefresh, setAutoRefresh] = useState<boolean>(true)
 	const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
 	const [isUpdatingTask, setIsUpdatingTask] = useState<boolean>(false)
+	const [lastSync, setLastSync] = useState<Date | null>(null)
 
 	const fetchTasks = useCallback(async (forceSync = false, silent = false) => {
 		try {
@@ -86,7 +87,7 @@ function TasksPageContent() {
 		fetchTasks()
 	}, [fetchTasks])
 
-	// Автоматическое обновление каждые 30 секунд
+	// Быстрое автообновление каждые 60 секунд (только чтение из БД, без синхронизации с Bitrix)
 	useEffect(() => {
 		if (!autoRefresh || isUpdatingTask) return
 
@@ -94,15 +95,40 @@ function TasksPageContent() {
 			// Пропускаем обновление, если идет обновление задачи
 			if (!isUpdatingTask) {
 				// Обновляем без синхронизации (тихо, без показа загрузки)
+				// Это только чтение из БД, не запрос к Bitrix API
 				fetchTasks(false, true)
 			}
-		}, 30000) // 30 секунд
+		}, 60000) // 60 секунд - оптимальный баланс между актуальностью и нагрузкой
 
 		return () => clearInterval(interval)
 	}, [autoRefresh, fetchTasks, isUpdatingTask])
 
+	// Полная синхронизация с Bitrix раз в час (3600000 мс)
+	useEffect(() => {
+		if (!autoRefresh) return
+
+		// Выполняем синхронизацию сразу при включении автообновления (если прошло больше часа с последней)
+		const shouldSyncNow = !lastSync || (Date.now() - lastSync.getTime()) > 3600000
+		
+		if (shouldSyncNow) {
+			console.log('🔄 Автоматическая полная синхронизация с Bitrix...')
+			fetchTasks(true, true) // forceSync=true, silent=true
+			setLastSync(new Date())
+		}
+
+		// Устанавливаем интервал для синхронизации раз в час
+		const syncInterval = setInterval(() => {
+			console.log('🔄 Автоматическая полная синхронизация с Bitrix (раз в час)...')
+			fetchTasks(true, true) // forceSync=true, silent=true
+			setLastSync(new Date())
+		}, 3600000) // 1 час = 3600000 миллисекунд
+
+		return () => clearInterval(syncInterval)
+	}, [autoRefresh, fetchTasks, lastSync])
+
 	const handleSync = () => {
 		fetchTasks(true, false)
+		setLastSync(new Date())
 	}
 
 	const handleRefresh = () => {
@@ -368,7 +394,7 @@ function TasksPageContent() {
 									? 'border-green-600/40 bg-green-600/10 text-green-200 hover:bg-green-600/20 hover:border-green-500 hover:shadow-lg hover:shadow-green-500/20'
 									: 'border-gray-600/40 bg-gray-600/10 text-gray-200 hover:bg-gray-600/20 hover:border-gray-500'
 							}`}
-							title={autoRefresh ? 'Автообновление включено (каждые 30 сек)' : 'Автообновление выключено'}
+							title={autoRefresh ? 'Автообновление включено (БД: каждые 60 сек, Bitrix: раз в час)' : 'Автообновление выключено'}
 						>
 							<RefreshCw
 								className={autoRefresh ? 'h-4 w-4 animate-spin' : 'h-4 w-4'}
