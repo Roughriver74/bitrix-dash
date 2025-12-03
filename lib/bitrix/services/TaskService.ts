@@ -864,8 +864,19 @@ export class TaskService {
     
     console.log(`✅ enrichTasksData: обработано ${enrichedTasks.length} задач из ${tasks.length} входных`);
     
+    // Фильтруем задачи с тегом "silence"
+    const filteredTasks = enrichedTasks.filter((task) => {
+      const tags = task.TAGS || [];
+      const hasSilenceTag = tags.some((tag: string) => 
+        String(tag).toLowerCase().trim() === 'silence'
+      );
+      return !hasSilenceTag;
+    });
+    
+    console.log(`🔇 Отфильтровано ${enrichedTasks.length - filteredTasks.length} задач с тегом "silence"`);
+    
     // Если нужна детальная история, можно запросить ее позже только для видимых задач
-    return enrichedTasks;
+    return filteredTasks;
   }
 
   private getPriorityLevel(task: BitrixTask, inactiveDays: number): 'normal' | 'warning' | 'critical' {

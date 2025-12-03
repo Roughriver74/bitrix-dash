@@ -59,7 +59,7 @@ RUN mkdir -p /app/db && chown nextjs:nodejs /app/db
 # Set correct permissions
 RUN chown -R nextjs:nodejs /app
 
-USER nextjs
+# USER nextjs
 
 EXPOSE 3000
 

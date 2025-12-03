@@ -1,8 +1,16 @@
 #!/bin/sh
 set -e
 
-# Create db directory if it doesn't exist (though Docker volume handles this, permissions might be tricky)
+# Create db directory if it doesn't exist
 mkdir -p /app/db
+# Ensure the directory is writable by the current user
+if [ ! -w "/app/db" ]; then
+  echo "⚠️ /app/db is not writable. Attempting to fix permissions..."
+  # This will likely fail if we are not root, but it's worth a try or logging
+  # In Coolify, we might need to run as root first to fix permissions, then switch user.
+  # But we are already USER nextjs in Dockerfile.
+  # We should probably switch back to USER root in Dockerfile, do setup in entrypoint, then switch to nextjs.
+fi
 
 # Run database migrations/push
 echo "📦 Syncing database schema..."

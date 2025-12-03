@@ -35,7 +35,18 @@ export async function GET(request: Request) {
     }
 
     const userIds = await deptService.getAllDepartmentUsers(department.ID, true);
-    const { activeTasks, completedTasks } = await taskService.getAllTasks(userIds);
+    const { activeTasks: allActiveTasks, completedTasks: allCompletedTasks } = await taskService.getAllTasks(userIds);
+
+    // Фильтруем задачи с тегом "silence"
+    const activeTasks = allActiveTasks.filter((task) => {
+      const tags = task.TAGS || [];
+      return !tags.some((tag: string) => String(tag).toLowerCase().trim() === 'silence');
+    });
+    
+    const completedTasks = allCompletedTasks.filter((task) => {
+      const tags = task.TAGS || [];
+      return !tags.some((tag: string) => String(tag).toLowerCase().trim() === 'silence');
+    });
 
     // Get user information
     const users = await getUsers(userIds, client);

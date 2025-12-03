@@ -114,6 +114,14 @@ export async function GET(request: Request) {
 
     const whereClause: any = {
       isDeleted: false,
+      // Исключаем задачи с тегом "silence"
+      tags: {
+        none: {
+          tag: {
+            name: 'silence'
+          }
+        }
+      }
     };
 
     if (!includeCompleted) {
