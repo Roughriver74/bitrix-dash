@@ -201,7 +201,7 @@ export async function GET(request: Request) {
           system: task.system?.name || null,
           p: task.priority?.name || null,
           weight: task.weight,
-          departments: departments.map((d: any) => d.id),
+          departments: departments.map((d: any) => d.name), // Используем названия
         },
         departments: departments,
         tags: tags,
@@ -551,7 +551,7 @@ function prepareTasksPayload(tasks: BitrixTask[], usersMap: UsersMap) {
         system: extended.metadata.system ?? null,
         p: extended.metadata.p ?? null,
         weight: extended.metadata.weight ?? null,
-        departments: extended.metadata.departments ?? null,
+        departments: extended.metadata.departments ?? null, // Это уже названия
       },
       departments: [], // Будет заполнено при синхронизации с БД
       tags: Array.isArray(extended.TAGS) ? extended.TAGS : [],

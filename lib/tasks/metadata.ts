@@ -7,7 +7,7 @@ export interface TaskMetadata {
 	system?: string | null
 	p?: string | null // Приоритет P0-P3
 	weight?: number | null
-	departments?: string[] | null // Множественное поле - список ID отделов
+	departments?: string[] | null // Множественное поле - список названий отделов
 }
 
 const TAG_PREFIXES = {
@@ -85,9 +85,9 @@ export function parseTaskMetadata(tags: string[] = []): {
 
 	if (lowerTag.startsWith(TAG_PREFIXES.departments)) {
 		const value = tag.slice(TAG_PREFIXES.departments.length).trim()
-		// Парсим список ID отделов, разделенных запятыми
+		// Парсим список названий отделов, разделенных запятыми
 		if (value) {
-			metadata.departments = value.split(',').map(id => id.trim()).filter(id => id.length > 0)
+			metadata.departments = value.split(',').map(name => name.trim()).filter(name => name.length > 0)
 		}
 		return
 	}

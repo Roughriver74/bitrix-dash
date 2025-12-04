@@ -236,32 +236,30 @@ export class BitrixSyncService {
       await prisma.taskDepartment.deleteMany({ where: { taskId: id } });
       
       if (metadata.departments && Array.isArray(metadata.departments)) {
-        // Получаем информацию об отделах из Bitrix (нужно закэшировать для оптимизации)
-        const departmentIds = metadata.departments;
+        // metadata.departments теперь содержит названия отделов, а не ID
+        const departmentNames = metadata.departments;
         
-        for (const deptId of departmentIds) {
+        for (const deptName of departmentNames) {
           try {
-            // Пытаемся получить название отдела из Bitrix
-            const deptInfo = await this.getDepartmentInfo(deptId);
+            // Ищем отдел по названию или создаем новый
+            const department = await prisma.department.upsert({
+              where: { name: deptName },
+              update: {},
+              create: { 
+                id: `custom_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                name: deptName 
+              },
+            });
             
-            if (deptInfo) {
-              // Upsert Department
-              const department = await prisma.department.upsert({
-                where: { id: deptId },
-                update: { name: deptInfo.name },
-                create: { id: deptId, name: deptInfo.name },
-              });
-              
-              // Link Department to Task
-              await prisma.taskDepartment.create({
-                data: {
-                  taskId: id,
-                  departmentId: department.id,
-                },
-              });
-            }
+            // Link Department to Task
+            await prisma.taskDepartment.create({
+              data: {
+                taskId: id,
+                departmentId: department.id,
+              },
+            });
           } catch (error) {
-            console.warn(`⚠️ Failed to link department ${deptId} to task ${id}:`, error);
+            console.warn(`⚠️ Failed to link department "${deptName}" to task ${id}:`, error);
           }
         }
       }
@@ -340,7 +338,7 @@ export class BitrixSyncService {
       if (lower.startsWith('departments:')) {
         const value = tag.split(':')[1];
         if (value) {
-          metadata.departments = value.split(',').map(id => id.trim()).filter(id => id.length > 0);
+          metadata.departments = value.split(',').map(name => name.trim()).filter(name => name.length > 0);
         }
       }
     });

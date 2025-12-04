@@ -142,8 +142,8 @@ export function TaskTable({
 				return false
 			// Фильтр по отделам - проверяем, есть ли выбранный отдел в списке отделов задачи
 			if (filters.department) {
-				const taskDepartmentIds = task.departments?.map(d => d.id) || []
-				if (!taskDepartmentIds.includes(filters.department)) {
+				const taskDepartmentNames = task.metadata.departments || []
+				if (!taskDepartmentNames.includes(filters.department)) {
 					return false
 				}
 			}
@@ -320,9 +320,9 @@ export function TaskTable({
 					break
 				case 'department':
 					// Если у задачи несколько отделов, создаем группу для каждого
-					if (task.departments && task.departments.length > 0) {
+					if (task.metadata.departments && task.metadata.departments.length > 0) {
 						// Берем первый отдел для группировки (можно изменить логику)
-						groupKey = `Отдел: ${task.departments[0].name}`
+						groupKey = `Отдел: ${task.metadata.departments[0]}`
 					} else {
 						groupKey = 'Отдел: Не задан'
 					}
@@ -802,7 +802,7 @@ export function TaskTable({
 										>
 											<option value=''>Все</option>
 											{departments.map(dept => (
-												<option key={dept.id} value={dept.id}>
+												<option key={dept.id} value={dept.name}>
 													{dept.name}
 												</option>
 											))}
@@ -985,7 +985,7 @@ interface SortableRowProps {
 				system?: string | null
 				p?: string | null
 				weight?: number | null
-				departments?: string[] | null
+				departments?: string[] | null // Теперь это названия, а не ID
 			}
 			otherTags?: string[]
 		}
@@ -1186,8 +1186,8 @@ function SortableRow({
 			</td>
 			<td className={clsx(cellPadding, 'text-sm text-gray-300')}>
 				<InlineMultiSelect
-					values={task.departments?.map(d => d.id) || []}
-					options={availableDepartments.map(d => ({ value: d.id, label: d.name }))}
+					values={task.metadata.departments || []}
+					options={availableDepartments.map(d => ({ value: d.name, label: d.name }))}
 					onChange={values => {
 						onUpdate?.(task.id, {
 							metadata: {
@@ -1217,8 +1217,8 @@ function SortableRow({
 							// Уведомляем родительский компонент о создании нового отдела
 							onDepartmentCreated?.(data.department)
 							
-							// Возвращаем ID нового отдела
-							return data.department.id
+							// Возвращаем название нового отдела
+							return data.department.name
 						} catch (error) {
 							console.error('Failed to create department:', error)
 							alert(error instanceof Error ? error.message : 'Не удалось создать отдел')
@@ -1548,11 +1548,12 @@ function InlineMultiSelect({
 		
 		setIsCreating(true)
 		try {
-			const newId = await onCreateNew(searchTerm.trim())
-			if (newId) {
+			const newValue = await onCreateNew(searchTerm.trim())
+			if (newValue) {
 				// Добавляем новый отдел к выбранным
-				onChange([...values, newId])
+				onChange([...values, newValue])
 				setSearchTerm('')
+				setIsOpen(false) // Закрываем выпадающий список после создания
 			}
 		} catch (error) {
 			console.error('Failed to create department:', error)
