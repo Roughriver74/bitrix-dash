@@ -447,6 +447,10 @@ function TasksPageContent() {
 					onEdit={handleEdit}
 					onComplete={handleComplete}
 					onDelete={handleDelete}
+					onDepartmentCreated={(department) => {
+						// Добавляем новый отдел в локальный список
+						setDepartments(prev => [...prev, department])
+					}}
 					onUpdate={async (taskId, updates) => {
 						try {
 							setIsUpdatingTask(true)

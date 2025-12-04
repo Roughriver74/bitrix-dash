@@ -60,6 +60,7 @@ interface TaskTableProps {
 			otherTags?: string[]
 		}
 	) => Promise<void>
+	onDepartmentCreated?: (department: { id: string; name: string }) => void
 	onSync?: () => void
 }
 
@@ -74,6 +75,7 @@ export function TaskTable({
 	onComplete,
 	onDelete,
 	onUpdate,
+	onDepartmentCreated,
 	onSync,
 }: TaskTableProps) {
 	const [filters, setFilters] = useState({
@@ -898,6 +900,7 @@ export function TaskTable({
 											onExclude={() => handleExclude(task.id)}
 											compactMode={compactMode}
 											onUpdate={onUpdate}
+											onDepartmentCreated={onDepartmentCreated}
 										/>
 									))
 								) : (
@@ -939,6 +942,7 @@ export function TaskTable({
 															onExclude={() => handleExclude(task.id)}
 															compactMode={compactMode}
 															onUpdate={onUpdate}
+															onDepartmentCreated={onDepartmentCreated}
 														/>
 													))}
 											</React.Fragment>
@@ -986,6 +990,7 @@ interface SortableRowProps {
 			otherTags?: string[]
 		}
 	) => Promise<void>
+	onDepartmentCreated?: (department: { id: string; name: string }) => void
 }
 
 function SortableRow({
@@ -1000,6 +1005,7 @@ function SortableRow({
 	index,
 	availableSystems = AVAILABLE_SYSTEMS,
 	availableDepartments = [],
+	onDepartmentCreated,
 }: SortableRowProps) {
 	const {
 		attributes,
@@ -1192,6 +1198,33 @@ function SortableRow({
 					}}
 					placeholder='—'
 					disabled={!isAdminMode}
+					onCreateNew={async (name: string) => {
+						try {
+							// Создаем новый отдел в БД
+							const response = await fetch('/api/bitrix/departments', {
+								method: 'POST',
+								headers: { 'Content-Type': 'application/json' },
+								body: JSON.stringify({ name }),
+							})
+							
+							if (!response.ok) {
+								const errorData = await response.json()
+								throw new Error(errorData.error || 'Failed to create department')
+							}
+							
+							const data = await response.json()
+							
+							// Уведомляем родительский компонент о создании нового отдела
+							onDepartmentCreated?.(data.department)
+							
+							// Возвращаем ID нового отдела
+							return data.department.id
+						} catch (error) {
+							console.error('Failed to create department:', error)
+							alert(error instanceof Error ? error.message : 'Не удалось создать отдел')
+							return null
+						}
+					}}
 				/>
 			</td>
 			<td className={clsx(cellPadding, 'text-sm text-gray-300')}>
@@ -1460,15 +1493,18 @@ function InlineMultiSelect({
 	onChange,
 	placeholder,
 	disabled,
+	onCreateNew,
 }: {
 	values: string[]
 	options: Array<{ value: string; label: string }>
 	onChange: (values: string[]) => void
 	placeholder?: string
 	disabled?: boolean
+	onCreateNew?: (name: string) => Promise<string | null> // Возвращает ID нового отдела или null
 }) {
 	const [isOpen, setIsOpen] = useState(false)
 	const [searchTerm, setSearchTerm] = useState('')
+	const [isCreating, setIsCreating] = useState(false)
 	const selectRef = useRef<HTMLDivElement>(null)
 	const inputRef = useRef<HTMLInputElement>(null)
 
@@ -1507,10 +1543,32 @@ function InlineMultiSelect({
 		}
 	}
 
+	const handleCreateNew = async () => {
+		if (!searchTerm.trim() || !onCreateNew || isCreating) return
+		
+		setIsCreating(true)
+		try {
+			const newId = await onCreateNew(searchTerm.trim())
+			if (newId) {
+				// Добавляем новый отдел к выбранным
+				onChange([...values, newId])
+				setSearchTerm('')
+			}
+		} catch (error) {
+			console.error('Failed to create department:', error)
+		} finally {
+			setIsCreating(false)
+		}
+	}
+
 	const selectedLabels = values
 		.map(v => options.find(o => o.value === v)?.label)
 		.filter(Boolean)
 		.join(', ')
+
+	const canCreateNew = searchTerm.trim() && 
+		!filteredOptions.some(opt => opt.label.toLowerCase() === searchTerm.toLowerCase()) &&
+		onCreateNew
 
 	return (
 		<div ref={selectRef} className='relative w-full'>
@@ -1535,8 +1593,14 @@ function InlineMultiSelect({
 							type='text'
 							value={searchTerm}
 							onChange={e => setSearchTerm(e.target.value)}
+							onKeyDown={e => {
+								if (e.key === 'Enter' && canCreateNew) {
+									e.preventDefault()
+									handleCreateNew()
+								}
+							}}
 							className='w-full bg-gray-900 border border-gray-600 rounded px-2 py-1 text-xs text-white focus:border-blue-500 outline-none'
-							placeholder='Поиск...'
+							placeholder='Поиск или создать...'
 							onClick={e => e.stopPropagation()}
 						/>
 					</div>
@@ -1572,8 +1636,25 @@ function InlineMultiSelect({
 								{option.label}
 							</button>
 						))}
-						{filteredOptions.length === 0 && (
-							<div className='px-3 py-1.5 text-xs text-gray-500'>Нет опций</div>
+						{canCreateNew && (
+							<button
+								type='button'
+								onClick={handleCreateNew}
+								disabled={isCreating}
+								className={clsx(
+									'w-full text-left px-3 py-1.5 text-xs font-medium border-t border-gray-700 mt-1 flex items-center gap-2',
+									isCreating
+										? 'text-gray-500 cursor-not-allowed'
+										: 'text-blue-400 hover:bg-gray-700'
+								)}
+							>
+								{isCreating ? '⏳ Создание...' : `+ Создать «${searchTerm}»`}
+							</button>
+						)}
+						{filteredOptions.length === 0 && !canCreateNew && (
+							<div className='px-3 py-1.5 text-xs text-gray-500'>
+								{searchTerm ? 'Нет опций' : 'Начните вводить для поиска'}
+							</div>
 						)}
 					</div>
 				</div>

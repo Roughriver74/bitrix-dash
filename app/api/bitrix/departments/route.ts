@@ -3,6 +3,7 @@ import { BitrixClient } from '@/lib/bitrix/client';
 import { DepartmentService } from '@/lib/bitrix/services/DepartmentService';
 import { getConfiguredWebhookUrl } from '@/lib/config';
 import { BitrixDepartment } from '@/lib/bitrix/types';
+import { prisma } from '@/lib/prisma';
 
 /**
  * GET /api/bitrix/departments
@@ -29,6 +30,64 @@ export async function GET() {
     const errorMessage = error instanceof Error 
       ? error.message 
       : 'Не удалось получить список отделов';
+    
+    return NextResponse.json(
+      { error: errorMessage },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * POST /api/bitrix/departments
+ * Создает новый "виртуальный" отдел в локальной БД (не в Битрикс24)
+ */
+export async function POST(request: Request) {
+  try {
+    const { name } = await request.json();
+
+    if (!name || typeof name !== 'string' || name.trim().length === 0) {
+      return NextResponse.json(
+        { error: 'Название отдела обязательно' },
+        { status: 400 }
+      );
+    }
+
+    // Проверяем, существует ли уже отдел с таким названием
+    const existingDepartment = await prisma.department.findUnique({
+      where: { name: name.trim() },
+    });
+
+    if (existingDepartment) {
+      return NextResponse.json(
+        { error: 'Отдел с таким названием уже существует' },
+        { status: 409 }
+      );
+    }
+
+    // Создаем новый отдел с автогенерированным ID
+    const department = await prisma.department.create({
+      data: {
+        id: `custom_${Date.now()}`, // Префикс "custom_" для отличия от ID Битрикс24
+        name: name.trim(),
+      },
+    });
+
+    return NextResponse.json(
+      {
+        department: {
+          id: department.id,
+          name: department.name,
+        },
+      },
+      { status: 201 }
+    );
+  } catch (error) {
+    console.error('❌ Departments POST error:', error);
+    
+    const errorMessage = error instanceof Error 
+      ? error.message 
+      : 'Не удалось создать отдел';
     
     return NextResponse.json(
       { error: errorMessage },
