@@ -339,6 +339,11 @@ export function TaskTable({
 		return groups
 	}, [sortedTasks, groupBy])
 	
+	// Мемоизированный массив ключей групп для стабильного сравнения
+	const groupKeys = useMemo(() => {
+		return Object.keys(groupedTasks).sort().join('|')
+	}, [groupedTasks])
+	
 	// Управление состоянием групп
 	useEffect(() => {
 		// Если изменился тип группировки - сворачиваем все группы
@@ -372,7 +377,7 @@ export function TaskTable({
 			})
 			return updated
 		})
-	}, [groupedTasks, groupBy, previousGroupBy])
+	}, [groupKeys, groupBy, previousGroupBy, groupedTasks])
 
 	const toggleGroup = (groupKey: string) => {
 		setCollapsedGroups(prev => {
