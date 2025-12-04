@@ -44,7 +44,7 @@ function TasksPageContent() {
 	const [selectedTask, setSelectedTask] = useState<TaskListItem | null>(null)
 	const [submitting, setSubmitting] = useState<boolean>(false)
 	const [isAdminMode, setIsAdminMode] = useState<boolean>(false)
-	const [autoRefresh, setAutoRefresh] = useState<boolean>(true)
+	const [autoRefresh, setAutoRefresh] = useState<boolean>(false)
 	const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
 	const [isUpdatingTask, setIsUpdatingTask] = useState<boolean>(false)
 	const [lastSync, setLastSync] = useState<Date | null>(null)
@@ -92,35 +92,8 @@ function TasksPageContent() {
 		fetchTasks()
 	}, [fetchTasks])
 
-	// Быстрое автообновление каждые 60 секунд (только чтение из БД, без синхронизации с Bitrix)
+	// Полная синхронизация с Bitrix раз в час (независимо от autoRefresh)
 	useEffect(() => {
-		if (!autoRefresh || isUpdatingTask) return
-
-		const interval = setInterval(() => {
-			// Пропускаем обновление, если идет обновление задачи
-			if (!isUpdatingTask) {
-				// Обновляем без синхронизации (тихо, без показа загрузки)
-				// Это только чтение из БД, не запрос к Bitrix API
-				fetchTasks(false, true)
-			}
-		}, 60000) // 60 секунд - оптимальный баланс между актуальностью и нагрузкой
-
-		return () => clearInterval(interval)
-	}, [autoRefresh, fetchTasks, isUpdatingTask])
-
-	// Полная синхронизация с Bitrix раз в час (3600000 мс)
-	useEffect(() => {
-		if (!autoRefresh) return
-
-		// Выполняем синхронизацию сразу при включении автообновления (если прошло больше часа с последней)
-		const shouldSyncNow = !lastSync || (Date.now() - lastSync.getTime()) > 3600000
-		
-		if (shouldSyncNow) {
-			console.log('🔄 Автоматическая полная синхронизация с Bitrix...')
-			fetchTasks(true, true) // forceSync=true, silent=true
-			setLastSync(new Date())
-		}
-
 		// Устанавливаем интервал для синхронизации раз в час
 		const syncInterval = setInterval(() => {
 			console.log('🔄 Автоматическая полная синхронизация с Bitrix (раз в час)...')
@@ -129,7 +102,7 @@ function TasksPageContent() {
 		}, 3600000) // 1 час = 3600000 миллисекунд
 
 		return () => clearInterval(syncInterval)
-	}, [autoRefresh, fetchTasks, lastSync])
+	}, [fetchTasks])
 
 	const handleSync = () => {
 		fetchTasks(true, false)
