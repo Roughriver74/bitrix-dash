@@ -139,6 +139,11 @@ export async function GET(request: Request) {
             tag: true
           }
         },
+        departments: {
+          include: {
+            department: true
+          }
+        },
         system: true,
         priority: true,
         abc: true,
@@ -159,9 +164,19 @@ export async function GET(request: Request) {
     });
     const systemNames = dbSystems.map(s => s.name);
 
+    // Получаем все отделы из БД для выпадающего списка
+    const dbDepartments = await prisma.department.findMany({
+      orderBy: { name: 'asc' }
+    });
+    const departmentsList = dbDepartments.map(d => ({ id: d.id, name: d.name }));
+
     // Маппинг задач из БД в формат API
     const payloadTasks = dbTasks.map((task: any, index: number) => {
       const tags = task.tags.map((t: any) => t.tag.name);
+      const departments = task.departments.map((d: any) => ({
+        id: d.department.id,
+        name: d.department.name,
+      }));
       
       // Формируем otherTags (все теги, которые не являются метаданными)
       // В текущей реализации мы храним все теги в tags, а метаданные в полях
@@ -186,7 +201,9 @@ export async function GET(request: Request) {
           system: task.system?.name || null,
           p: task.priority?.name || null,
           weight: task.weight,
+          departments: departments.map((d: any) => d.id),
         },
+        departments: departments,
         tags: tags,
         otherTags: tags.filter((t: string) => !t.includes(':')), // Упрощенно
         raw: {
@@ -212,6 +229,7 @@ export async function GET(request: Request) {
         name: department.NAME,
       },
       systems: systemNames,
+      departments: departmentsList,
     });
   } catch (error) {
     console.error('❌ Tasks GET error:', error);
@@ -533,7 +551,9 @@ function prepareTasksPayload(tasks: BitrixTask[], usersMap: UsersMap) {
         system: extended.metadata.system ?? null,
         p: extended.metadata.p ?? null,
         weight: extended.metadata.weight ?? null,
+        departments: extended.metadata.departments ?? null,
       },
+      departments: [], // Будет заполнено при синхронизации с БД
       tags: Array.isArray(extended.TAGS) ? extended.TAGS : [],
       otherTags: extended.otherTags,
       raw: {

@@ -44,6 +44,7 @@ model Task {
   weight          Float?
   
   tags            TaskTag[]
+  departments     TaskDepartment[]
   
   order           Int      @default(0)
   isDeleted       Boolean  @default(false)
@@ -97,4 +98,19 @@ model User {
   position String?
   active   Boolean @default(true)
   tasks    Task[]
+}
+
+model Department {
+  id    String           @id
+  name  String           @unique
+  tasks TaskDepartment[]
+}
+
+model TaskDepartment {
+  taskId       String
+  departmentId String
+  task         Task       @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  department   Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+
+  @@id([taskId, departmentId])
 }

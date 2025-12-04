@@ -230,6 +230,80 @@ export class BitrixSyncService {
           },
         });
       }
+
+      // Handle Departments
+      // First delete existing department links for this task
+      await prisma.taskDepartment.deleteMany({ where: { taskId: id } });
+      
+      if (metadata.departments && Array.isArray(metadata.departments)) {
+        // Получаем информацию об отделах из Bitrix (нужно закэшировать для оптимизации)
+        const departmentIds = metadata.departments;
+        
+        for (const deptId of departmentIds) {
+          try {
+            // Пытаемся получить название отдела из Bitrix
+            const deptInfo = await this.getDepartmentInfo(deptId);
+            
+            if (deptInfo) {
+              // Upsert Department
+              const department = await prisma.department.upsert({
+                where: { id: deptId },
+                update: { name: deptInfo.name },
+                create: { id: deptId, name: deptInfo.name },
+              });
+              
+              // Link Department to Task
+              await prisma.taskDepartment.create({
+                data: {
+                  taskId: id,
+                  departmentId: department.id,
+                },
+              });
+            }
+          } catch (error) {
+            console.warn(`⚠️ Failed to link department ${deptId} to task ${id}:`, error);
+          }
+        }
+      }
+    }
+  }
+
+  // Кэш для информации об отделах
+  private departmentCache = new Map<string, { name: string }>();
+
+  /**
+   * Получает информацию об отделе (с кэшированием)
+   */
+  private async getDepartmentInfo(departmentId: string): Promise<{ name: string } | null> {
+    // Проверяем кэш
+    if (this.departmentCache.has(departmentId)) {
+      return this.departmentCache.get(departmentId)!;
+    }
+
+    try {
+      // Загружаем все отделы один раз
+      if (this.departmentCache.size === 0) {
+        const allDepartments = await this.client.call<any[]>('department.get');
+        this.flattenAndCacheDepartments(allDepartments);
+      }
+
+      return this.departmentCache.get(departmentId) || null;
+    } catch (error) {
+      console.error(`❌ Failed to get department info for ${departmentId}:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * Рекурсивно обходит дерево отделов и кэширует их
+   */
+  private flattenAndCacheDepartments(departments: any[]) {
+    for (const dept of departments) {
+      this.departmentCache.set(dept.ID, { name: dept.NAME });
+      
+      if (dept.CHILDREN && Array.isArray(dept.CHILDREN)) {
+        this.flattenAndCacheDepartments(dept.CHILDREN);
+      }
     }
   }
 
@@ -263,6 +337,12 @@ export class BitrixSyncService {
       if (lower.startsWith('impact:')) metadata.impact = tag.split(':')[1];
       if (lower.startsWith('system:')) metadata.system = tag.split(':')[1];
       if (lower.startsWith('p:')) metadata.p = tag.split(':')[1];
+      if (lower.startsWith('departments:')) {
+        const value = tag.split(':')[1];
+        if (value) {
+          metadata.departments = value.split(',').map(id => id.trim()).filter(id => id.length > 0);
+        }
+      }
     });
 
     return metadata;

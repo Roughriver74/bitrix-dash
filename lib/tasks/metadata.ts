@@ -7,6 +7,7 @@ export interface TaskMetadata {
 	system?: string | null
 	p?: string | null // Приоритет P0-P3
 	weight?: number | null
+	departments?: string[] | null // Множественное поле - список ID отделов
 }
 
 const TAG_PREFIXES = {
@@ -16,6 +17,7 @@ const TAG_PREFIXES = {
 	system: 'system:',
 	p: 'p:', // Приоритет P0-P3
 	weight: 'weight:',
+	departments: 'departments:', // Отделы (множественное)
 } as const
 
 const ALL_PREFIXES = Object.values(TAG_PREFIXES)
@@ -74,14 +76,23 @@ export function parseTaskMetadata(tags: string[] = []): {
 			return
 		}
 
-		if (lowerTag.startsWith(TAG_PREFIXES.weight)) {
-			const value = tag.slice(TAG_PREFIXES.weight.length).trim()
-			const numeric = Number(value)
-			metadata.weight = Number.isFinite(numeric) ? numeric : null
-			return
-		}
+	if (lowerTag.startsWith(TAG_PREFIXES.weight)) {
+		const value = tag.slice(TAG_PREFIXES.weight.length).trim()
+		const numeric = Number(value)
+		metadata.weight = Number.isFinite(numeric) ? numeric : null
+		return
+	}
 
-		otherTags.push(tag)
+	if (lowerTag.startsWith(TAG_PREFIXES.departments)) {
+		const value = tag.slice(TAG_PREFIXES.departments.length).trim()
+		// Парсим список ID отделов, разделенных запятыми
+		if (value) {
+			metadata.departments = value.split(',').map(id => id.trim()).filter(id => id.length > 0)
+		}
+		return
+	}
+
+	otherTags.push(tag)
 	})
 
 	return { metadata, otherTags }
@@ -112,6 +123,10 @@ export function buildMetadataTags(metadata: TaskMetadata = {}): string[] {
 
 	if (metadata.weight != null) {
 		tags.push(`${TAG_PREFIXES.weight}${metadata.weight}`)
+	}
+
+	if (metadata.departments && metadata.departments.length > 0) {
+		tags.push(`${TAG_PREFIXES.departments}${metadata.departments.join(',')}`)
 	}
 
 	return tags

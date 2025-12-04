@@ -13,6 +13,7 @@ export interface TaskListItem {
   priorityLevel: 'normal' | 'warning' | 'critical';
   isOverdue: boolean;
   metadata: TaskMetadata;
+  departments?: Array<{ id: string; name: string }>;
   tags: string[];
   otherTags: string[];
   order: number;

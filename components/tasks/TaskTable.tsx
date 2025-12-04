@@ -24,13 +24,14 @@ import { TaskListItem } from '@/components/tasks/types'
 import { PRIORITY_LEVELS, getPriorityClass } from '@/lib/tasks/priorities'
 import { AVAILABLE_SYSTEMS } from '@/lib/tasks/systems'
 
-type GroupBy = 'none' | 'abc' | 'status' | 'responsible' | 'impact' | 'priority'
+type GroupBy = 'none' | 'abc' | 'status' | 'responsible' | 'impact' | 'priority' | 'department'
 
 interface TaskTableProps {
 	tasks: TaskListItem[]
 	loading?: boolean
 	isAdminMode?: boolean
 	systems?: string[]
+	departments?: Array<{ id: string; name: string }>
 	onReorder: (tasks: TaskListItem[]) => void
 	onEdit: (task: TaskListItem) => void
 	onComplete: (task: TaskListItem) => void
@@ -53,6 +54,7 @@ interface TaskTableProps {
 				system?: string | null
 				p?: string | null
 				weight?: number | null
+				departments?: string[] | null
 			}
 			tags?: string[]
 			otherTags?: string[]
@@ -66,6 +68,7 @@ export function TaskTable({
 	loading,
 	isAdminMode = false,
 	systems = [],
+	departments = [],
 	onReorder,
 	onEdit,
 	onComplete,
@@ -81,6 +84,7 @@ export function TaskTable({
 		p: '',
 		responsibleName: '',
 		searchQuery: '',
+		department: '',
 	})
 	const [hideRequests, setHideRequests] = useState(true)
 	const [groupBy, setGroupBy] = useState<GroupBy>('priority')
@@ -134,6 +138,13 @@ export function TaskTable({
 				!task.responsibleName?.toLowerCase().includes(filters.responsibleName.toLowerCase())
 			)
 				return false
+			// Фильтр по отделам - проверяем, есть ли выбранный отдел в списке отделов задачи
+			if (filters.department) {
+				const taskDepartmentIds = task.departments?.map(d => d.id) || []
+				if (!taskDepartmentIds.includes(filters.department)) {
+					return false
+				}
+			}
 			// Фильтр "Заявки" - исключаем задачи со словом "Заявка" в названии или тегами BUG, FIN
 			if (hideRequests) {
 				const hasHiddenTag = task.tags.some(tag => 
@@ -150,7 +161,7 @@ export function TaskTable({
 				return false
 			return true
 		})
-	}, [tasks, filters, hideRequests])
+	}, [tasks, filters, hideRequests, excludedTaskIds])
 
 	const clearFilters = () => {
 		setFilters({
@@ -161,6 +172,7 @@ export function TaskTable({
 			p: '',
 			responsibleName: '',
 			searchQuery: '',
+			department: '',
 		})
 		setHideRequests(false)
 	}
@@ -304,6 +316,15 @@ export function TaskTable({
 				case 'priority':
 					groupKey = task.metadata.p || 'Без приоритета'
 					break
+				case 'department':
+					// Если у задачи несколько отделов, создаем группу для каждого
+					if (task.departments && task.departments.length > 0) {
+						// Берем первый отдел для группировки (можно изменить логику)
+						groupKey = `Отдел: ${task.departments[0].name}`
+					} else {
+						groupKey = 'Отдел: Не задан'
+					}
+					break
 			}
 
 			if (!groups[groupKey]) {
@@ -385,6 +406,7 @@ export function TaskTable({
 							<option value='responsible'>По ответственному</option>
 							<option value='impact'>По влиянию</option>
 							<option value='priority'>По приоритету</option>
+							<option value='department'>По отделу</option>
 						</select>
 					</div>
 
@@ -672,6 +694,7 @@ export function TaskTable({
 									<th className='w-20 px-4 py-3'>Вес</th>
 									<th className='w-36 px-4 py-3'>Влияние</th>
 									<th className='w-32 px-4 py-3'>Система</th>
+									<th className='w-40 px-4 py-3'>Отделы</th>
 									<th className='w-24 px-4 py-3'>Приоритет</th>
 									<th className='w-32 px-4 py-3 text-right'>Действия</th>
 								</tr>
@@ -769,6 +792,22 @@ export function TaskTable({
 									</th>
 									<th className='px-2 py-2'>
 										<select
+											value={filters.department}
+											onChange={e =>
+												setFilters(prev => ({ ...prev, department: e.target.value }))
+											}
+											className='w-full px-2 py-1 text-xs bg-gray-900 text-gray-300 border border-gray-700 rounded focus:border-blue-500 focus:outline-none'
+										>
+											<option value=''>Все</option>
+											{departments.map(dept => (
+												<option key={dept.id} value={dept.id}>
+													{dept.name}
+												</option>
+											))}
+										</select>
+									</th>
+									<th className='px-2 py-2'>
+										<select
 											value={filters.p}
 											onChange={e =>
 												setFilters(prev => ({ ...prev, p: e.target.value }))
@@ -852,6 +891,7 @@ export function TaskTable({
 											index={index}
 											isAdminMode={isAdminMode}
 											availableSystems={availableSystems}
+											availableDepartments={departments}
 											onEdit={onEdit}
 											onComplete={onComplete}
 											onDelete={onDelete}
@@ -892,6 +932,7 @@ export function TaskTable({
 															index={index}
 															isAdminMode={isAdminMode}
 															availableSystems={availableSystems}
+															availableDepartments={departments}
 															onEdit={onEdit}
 															onComplete={onComplete}
 															onDelete={onDelete}
@@ -923,6 +964,7 @@ interface SortableRowProps {
 	isAdminMode?: boolean
 	index: number
 	availableSystems?: string[]
+	availableDepartments?: Array<{ id: string; name: string }>
 	onUpdate?: (
 		taskId: string,
 		updates: {
@@ -939,6 +981,7 @@ interface SortableRowProps {
 				system?: string | null
 				p?: string | null
 				weight?: number | null
+				departments?: string[] | null
 			}
 			otherTags?: string[]
 		}
@@ -956,6 +999,7 @@ function SortableRow({
 	onUpdate,
 	index,
 	availableSystems = AVAILABLE_SYSTEMS,
+	availableDepartments = [],
 }: SortableRowProps) {
 	const {
 		attributes,
@@ -1132,6 +1176,22 @@ function SortableRow({
 					}}
 					placeholder='—'
 					allowCustom={true}
+				/>
+			</td>
+			<td className={clsx(cellPadding, 'text-sm text-gray-300')}>
+				<InlineMultiSelect
+					values={task.departments?.map(d => d.id) || []}
+					options={availableDepartments.map(d => ({ value: d.id, label: d.name }))}
+					onChange={values => {
+						onUpdate?.(task.id, {
+							metadata: {
+								...task.metadata,
+								departments: values.length > 0 ? values : null,
+							},
+						})
+					}}
+					placeholder='—'
+					disabled={!isAdminMode}
 				/>
 			</td>
 			<td className={clsx(cellPadding, 'text-sm text-gray-300')}>
@@ -1391,6 +1451,134 @@ function InlineTextInput({
 		>
 			{value || placeholder || '—'}
 		</button>
+	)
+}
+
+function InlineMultiSelect({
+	values,
+	options,
+	onChange,
+	placeholder,
+	disabled,
+}: {
+	values: string[]
+	options: Array<{ value: string; label: string }>
+	onChange: (values: string[]) => void
+	placeholder?: string
+	disabled?: boolean
+}) {
+	const [isOpen, setIsOpen] = useState(false)
+	const [searchTerm, setSearchTerm] = useState('')
+	const selectRef = useRef<HTMLDivElement>(null)
+	const inputRef = useRef<HTMLInputElement>(null)
+
+	useEffect(() => {
+		if (isOpen) {
+			setSearchTerm('')
+			setTimeout(() => inputRef.current?.focus(), 50)
+		}
+	}, [isOpen])
+
+	const filteredOptions = options.filter(option =>
+		option.label.toLowerCase().includes(searchTerm.toLowerCase())
+	)
+
+	useEffect(() => {
+		const handleClickOutside = (event: MouseEvent) => {
+			if (
+				selectRef.current &&
+				!selectRef.current.contains(event.target as Node)
+			) {
+				setIsOpen(false)
+			}
+		}
+
+		if (isOpen) {
+			document.addEventListener('mousedown', handleClickOutside)
+			return () => document.removeEventListener('mousedown', handleClickOutside)
+		}
+	}, [isOpen])
+
+	const handleToggle = (value: string) => {
+		if (values.includes(value)) {
+			onChange(values.filter(v => v !== value))
+		} else {
+			onChange([...values, value])
+		}
+	}
+
+	const selectedLabels = values
+		.map(v => options.find(o => o.value === v)?.label)
+		.filter(Boolean)
+		.join(', ')
+
+	return (
+		<div ref={selectRef} className='relative w-full'>
+			<button
+				type='button'
+				onClick={() => !disabled && setIsOpen(!isOpen)}
+				disabled={disabled}
+				className={clsx(
+					'inline-flex items-center justify-center rounded-md px-2 py-1 text-xs font-medium transition w-full min-w-[3rem] border text-left',
+					'bg-gray-800 text-gray-300 border-gray-700',
+					isOpen && 'ring-2 ring-blue-500',
+					disabled && 'opacity-70 cursor-default'
+				)}
+			>
+				<span className='truncate'>{selectedLabels || placeholder || '—'}</span>
+			</button>
+			{isOpen && (
+				<div className='absolute z-50 mt-1 w-full min-w-[16rem] rounded-md bg-gray-800 border border-gray-700 shadow-lg overflow-hidden'>
+					<div className='p-2 border-b border-gray-700 bg-gray-800'>
+						<input
+							ref={inputRef}
+							type='text'
+							value={searchTerm}
+							onChange={e => setSearchTerm(e.target.value)}
+							className='w-full bg-gray-900 border border-gray-600 rounded px-2 py-1 text-xs text-white focus:border-blue-500 outline-none'
+							placeholder='Поиск...'
+							onClick={e => e.stopPropagation()}
+						/>
+					</div>
+					<div className='max-h-60 overflow-y-auto py-1'>
+						<button
+							type='button'
+							onClick={() => {
+								onChange([])
+								setIsOpen(false)
+							}}
+							className='w-full text-left px-3 py-1.5 text-xs text-gray-400 hover:bg-gray-700'
+						>
+							{placeholder || '—'}
+						</button>
+						{filteredOptions.map(option => (
+							<button
+								key={option.value}
+								type='button'
+								onClick={() => handleToggle(option.value)}
+								className={clsx(
+									'w-full text-left px-3 py-1.5 text-xs hover:bg-gray-700 flex items-center gap-2',
+									values.includes(option.value)
+										? 'text-white font-semibold'
+										: 'text-gray-300'
+								)}
+							>
+								<input
+									type='checkbox'
+									checked={values.includes(option.value)}
+									readOnly
+									className='rounded border-gray-600 text-blue-500 focus:ring-blue-500'
+								/>
+								{option.label}
+							</button>
+						))}
+						{filteredOptions.length === 0 && (
+							<div className='px-3 py-1.5 text-xs text-gray-500'>Нет опций</div>
+						)}
+					</div>
+				</div>
+			)}
+		</div>
 	)
 }
 

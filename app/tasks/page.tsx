@@ -20,6 +20,7 @@ interface TasksResponse {
 		name: string
 	}
 	systems?: string[]
+	departments?: Array<{ id: string; name: string }>
 }
 
 export default function TasksPage() {
@@ -35,6 +36,7 @@ function TasksPageContent() {
 	const [users, setUsers] = useState<UserOption[]>([])
 	const [departmentName, setDepartmentName] = useState<string>('')
 	const [systems, setSystems] = useState<string[]>([])
+	const [departments, setDepartments] = useState<Array<{ id: string; name: string }>>([])
 	const [loading, setLoading] = useState<boolean>(true)
 	const [error, setError] = useState<string | null>(null)
 	const [formOpen, setFormOpen] = useState(false)
@@ -65,6 +67,9 @@ function TasksPageContent() {
 			setDepartmentName(data.department?.name ?? '')
 			if (data.systems) {
 				setSystems(data.systems)
+			}
+			if (data.departments) {
+				setDepartments(data.departments)
 			}
 			setLastUpdate(new Date())
 			
@@ -437,6 +442,7 @@ function TasksPageContent() {
 					loading={loading}
 					isAdminMode={isAdminMode}
 					systems={systems}
+					departments={departments}
 					onReorder={handleReorder}
 					onEdit={handleEdit}
 					onComplete={handleComplete}
