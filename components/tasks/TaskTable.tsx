@@ -90,7 +90,10 @@ export function TaskTable({
 	})
 	const [hideRequests, setHideRequests] = useState(true)
 	const [groupBy, setGroupBy] = useState<GroupBy>('priority')
-	const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
+	const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => {
+		// По умолчанию все группы свернуты
+		return new Set()
+	})
 	const [showStats, setShowStats] = useState(false)
 	const [compactMode, setCompactMode] = useState(false)
 	const [excludedTaskIds, setExcludedTaskIds] = useState<Set<string>>(() => {
@@ -287,6 +290,9 @@ export function TaskTable({
 		}
 
 		const groups: Record<string, TaskListItem[]> = {}
+		
+		// Сбрасываем collapsedGroups при изменении группировки, но оставляем все свернутыми
+		const newCollapsedGroups = new Set<string>()
 
 		sortedTasks.forEach(task => {
 			let groupKey = 'Без группы'
@@ -331,8 +337,16 @@ export function TaskTable({
 
 			if (!groups[groupKey]) {
 				groups[groupKey] = []
+				newCollapsedGroups.add(groupKey) // Автоматически сворачиваем новые группы
 			}
 			groups[groupKey].push(task)
+		})
+		
+		// Обновляем collapsedGroups с новыми группами
+		setCollapsedGroups(prev => {
+			const merged = new Set(prev)
+			newCollapsedGroups.forEach(key => merged.add(key))
+			return merged
 		})
 
 		return groups
@@ -547,13 +561,13 @@ export function TaskTable({
 
 			{/* Мобильный карточный вид */}
 			<div className='block lg:hidden'>
-				<div className='p-3 space-y-3'>
+				<div className='p-2 space-y-2'>
 					{loading && filteredTasks.length === 0 ? (
 						Array.from({ length: 3 }).map((_, idx) => (
-							<div key={`skeleton-card-${idx}`} className='rounded-xl bg-gray-800/50 p-4 animate-pulse'>
-								<div className='h-5 w-3/4 bg-gray-700 rounded mb-3'></div>
-								<div className='h-4 w-full bg-gray-700 rounded mb-2'></div>
-								<div className='h-4 w-2/3 bg-gray-700 rounded'></div>
+							<div key={`skeleton-card-${idx}`} className='rounded-lg bg-gray-800/50 p-3 animate-pulse'>
+								<div className='h-4 w-3/4 bg-gray-700 rounded mb-2'></div>
+								<div className='h-3 w-full bg-gray-700 rounded mb-1.5'></div>
+								<div className='h-3 w-2/3 bg-gray-700 rounded'></div>
 							</div>
 						))
 					) : filteredTasks.length === 0 ? (
@@ -562,7 +576,7 @@ export function TaskTable({
 								? 'Задачи не найдены. Добавьте первую задачу.'
 								: 'Нет задач, соответствующих фильтрам.'}
 						</div>
-					) : (
+					) : (groupBy === 'none' || filters.searchQuery) ? (
 						sortedTasks.map((task) => (
 							<MobileTaskCard
 								key={task.id}
@@ -573,6 +587,47 @@ export function TaskTable({
 								isAdminMode={isAdminMode}
 							/>
 						))
+					) : (
+						Object.entries(groupedTasks).map(([groupKey, groupTasks]) => {
+							const isCollapsed = collapsedGroups.has(groupKey)
+							return (
+								<div key={`mobile-group-${groupKey}`} className='space-y-2'>
+									{/* Заголовок группы */}
+									<button
+										onClick={() => toggleGroup(groupKey)}
+										className='w-full flex items-center justify-between bg-gray-800/70 border border-gray-700/50 rounded-lg px-3 py-2 sticky top-0 z-10 backdrop-blur-sm'
+									>
+										<div className='flex items-center gap-2'>
+											{isCollapsed ? (
+												<ChevronRight className='h-4 w-4 text-gray-400' />
+											) : (
+												<ChevronDown className='h-4 w-4 text-gray-400' />
+											)}
+											<span className='text-sm font-semibold text-gray-200'>{groupKey}</span>
+										</div>
+										<span className='text-xs text-gray-400 bg-gray-700/50 px-2 py-0.5 rounded-full'>
+											{groupTasks.length}
+											</span>
+									</button>
+									
+									{/* Задачи группы */}
+									{!isCollapsed && (
+										<div className='space-y-2 pl-1'>
+											{groupTasks.map((task) => (
+												<MobileTaskCard
+													key={task.id}
+													task={task}
+													onComplete={onComplete}
+													onEdit={onEdit}
+													onDelete={onDelete}
+													isAdminMode={isAdminMode}
+												/>
+										))}
+									</div>
+								)}
+								</div>
+							)
+						})
 					)}
 				</div>
 			</div>
@@ -1660,19 +1715,19 @@ function MobileTaskCard({
 	return (
 		<div
 			className={clsx(
-				'rounded-xl border transition-all duration-200 overflow-hidden',
+				'rounded-lg border transition-all duration-200 overflow-hidden',
 				task.isOverdue
 					? 'bg-gradient-to-br from-red-900/20 to-red-900/10 border-red-700/50'
 					: task.metadata.p === 'P0'
 					? 'bg-gradient-to-br from-purple-900/20 to-purple-900/10 border-purple-700/50'
 					: 'bg-gradient-to-br from-gray-800/60 to-gray-800/40 border-gray-700/50',
-				'hover:shadow-xl hover:border-gray-600'
+				'active:scale-[0.98]'
 			)}
 		>
 			{/* Шапка карточки */}
-			<div className='p-4 pb-3'>
+			<div className='p-3 pb-2'>
 				{/* Верхняя строка с бэйджами */}
-				<div className='flex items-center gap-2 mb-2 flex-wrap'>
+				<div className='flex items-center gap-1.5 mb-1.5 flex-wrap'>
 					<span className='text-[10px] font-mono font-bold text-gray-500'>#{task.order}</span>
 					
 					{task.metadata.p && (
@@ -1711,12 +1766,12 @@ function MobileTaskCard({
 				</div>
 
 				{/* Заголовок */}
-				<h3 className='font-semibold text-white text-sm mb-2 break-words leading-snug'>
+				<h3 className='font-semibold text-white text-sm mb-1.5 break-words leading-tight'>
 					{task.title}
 				</h3>
 
 				{/* Основная информация - компактно */}
-				<div className='space-y-1.5'>
+				<div className='space-y-1'>
 					{/* Ответственный и статус */}
 					<div className='flex items-center justify-between gap-2'>
 						<div className='flex items-center gap-1.5 min-w-0 flex-1'>
@@ -1755,10 +1810,10 @@ function MobileTaskCard({
 
 					{/* Отделы - если есть */}
 					{task.metadata.departments && task.metadata.departments.length > 0 && (
-						<div className='flex items-start gap-1.5'>
-							<span className='text-[10px] text-gray-500 mt-0.5'>🏢</span>
-							<div className='flex flex-wrap gap-1'>
-								{task.metadata.departments.slice(0, 3).map((dept, idx) => (
+						<div className='flex items-center gap-1.5'>
+							<span className='text-[10px] text-gray-500'>🏢</span>
+							<div className='flex flex-wrap gap-1 items-center'>
+								{task.metadata.departments.slice(0, 2).map((dept, idx) => (
 									<span
 										key={idx}
 										className='text-[10px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-300 border border-blue-500/30'
@@ -1766,9 +1821,9 @@ function MobileTaskCard({
 										{dept}
 									</span>
 								))}
-								{task.metadata.departments.length > 3 && (
-									<span className='text-[10px] text-gray-500'>
-										+{task.metadata.departments.length - 3}
+								{task.metadata.departments.length > 2 && (
+									<span className='text-[10px] text-gray-400 font-medium'>
+										+{task.metadata.departments.length - 2}
 									</span>
 								)}
 							</div>
@@ -1780,25 +1835,25 @@ function MobileTaskCard({
 				{(task.description || task.metadata.impact || task.metadata.weight || task.tags.length > 0) && (
 					<button
 						onClick={() => setExpanded(!expanded)}
-						className='mt-3 w-full flex items-center justify-center gap-1 text-xs text-gray-400 hover:text-gray-300 transition'
+						className='mt-2 w-full flex items-center justify-center gap-1 text-[10px] text-gray-400 hover:text-gray-300 transition py-1'
 					>
-						<ChevronDown className={clsx('h-4 w-4 transition-transform', expanded && 'rotate-180')} />
-						{expanded ? 'Скрыть детали' : 'Показать детали'}
+						<ChevronDown className={clsx('h-3 w-3 transition-transform', expanded && 'rotate-180')} />
+						{expanded ? 'Скрыть' : 'Детали'}
 					</button>
 				)}
 			</div>
 
 			{/* Расширенная информация */}
 			{expanded && (
-				<div className='px-4 pb-3 pt-0 border-t border-gray-700/30 space-y-2'>
+				<div className='px-3 pb-2 pt-0 border-t border-gray-700/30 space-y-1.5'>
 					{task.description && (
-						<div>
-							<span className='text-[10px] text-gray-500 uppercase tracking-wide'>Описание</span>
-							<p className='text-xs text-gray-300 mt-1 leading-relaxed'>{task.description}</p>
+						<div className='pt-1'>
+							<span className='text-[10px] text-gray-500 uppercase tracking-wide block mb-1'>Описание</span>
+							<p className='text-xs text-gray-300 leading-snug'>{task.description}</p>
 						</div>
 					)}
 
-					<div className='grid grid-cols-2 gap-2'>
+					<div className='grid grid-cols-2 gap-1.5'>
 						{task.metadata.impact && (
 							<div>
 								<span className='text-[10px] text-gray-500 uppercase tracking-wide block'>Влияние</span>
@@ -1823,12 +1878,12 @@ function MobileTaskCard({
 
 					{task.tags.length > 0 && (
 						<div>
-							<span className='text-[10px] text-gray-500 uppercase tracking-wide block mb-1.5'>Теги</span>
+							<span className='text-[10px] text-gray-500 uppercase tracking-wide block mb-1'>Теги</span>
 							<div className='flex flex-wrap gap-1'>
 								{task.tags.map((tag, idx) => (
 									<span
 										key={`${task.id}-tag-${idx}`}
-										className='text-[10px] px-2 py-0.5 rounded bg-gray-700/50 text-gray-400 border border-gray-600/50'
+										className='text-[10px] px-1.5 py-0.5 rounded bg-gray-700/50 text-gray-400 border border-gray-600/50'
 									>
 										{tag}
 									</span>
@@ -1841,28 +1896,28 @@ function MobileTaskCard({
 
 			{/* Кнопки действий */}
 			{isAdminMode && (
-				<div className='px-4 pb-3 flex gap-2 border-t border-gray-700/30 pt-3'>
+				<div className='px-3 pb-2 flex gap-1.5 border-t border-gray-700/30 pt-2'>
 					<button
 						type='button'
 						onClick={() => onComplete(task)}
-						className='flex-1 flex items-center justify-center gap-1.5 rounded-lg border border-green-600/50 bg-green-600/10 px-3 py-2 text-xs font-semibold text-green-400 transition-all duration-200 hover:bg-green-600/20 active:scale-95'
+						className='flex-1 flex items-center justify-center gap-1 rounded-lg border border-green-600/50 bg-green-600/10 px-2.5 py-1.5 text-[11px] font-semibold text-green-400 transition-all duration-200 active:scale-95'
 					>
-						<Check className='h-4 w-4' />
+						<Check className='h-3.5 w-3.5' />
 						Готово
 					</button>
 					<button
 						type='button'
 						onClick={() => onEdit(task)}
-						className='flex items-center justify-center rounded-lg border border-blue-600/50 bg-blue-600/10 px-3 py-2 text-xs font-semibold text-blue-400 transition-all duration-200 hover:bg-blue-600/20 active:scale-95'
+						className='flex items-center justify-center rounded-lg border border-blue-600/50 bg-blue-600/10 px-2.5 py-1.5 text-xs font-semibold text-blue-400 transition-all duration-200 active:scale-95'
 					>
-						<Edit className='h-4 w-4' />
+						<Edit className='h-3.5 w-3.5' />
 					</button>
 					<button
 						type='button'
 						onClick={() => onDelete(task)}
-						className='flex items-center justify-center rounded-lg border border-red-500/50 bg-red-500/10 px-3 py-2 text-xs font-semibold text-red-400 transition-all duration-200 hover:bg-red-600/20 active:scale-95'
+						className='flex items-center justify-center rounded-lg border border-red-500/50 bg-red-500/10 px-2.5 py-1.5 text-xs font-semibold text-red-400 transition-all duration-200 active:scale-95'
 					>
-						<Trash2 className='h-4 w-4' />
+						<Trash2 className='h-3.5 w-3.5' />
 					</button>
 				</div>
 			)}
