@@ -547,10 +547,10 @@ export function TaskTable({
 
 			{/* Мобильный карточный вид */}
 			<div className='block lg:hidden'>
-				<div className='p-4 space-y-3'>
+				<div className='p-3 space-y-3'>
 					{loading && filteredTasks.length === 0 ? (
 						Array.from({ length: 3 }).map((_, idx) => (
-							<div key={`skeleton-card-${idx}`} className='rounded-lg bg-gray-800/50 p-4 animate-pulse'>
+							<div key={`skeleton-card-${idx}`} className='rounded-xl bg-gray-800/50 p-4 animate-pulse'>
 								<div className='h-5 w-3/4 bg-gray-700 rounded mb-3'></div>
 								<div className='h-4 w-full bg-gray-700 rounded mb-2'></div>
 								<div className='h-4 w-2/3 bg-gray-700 rounded'></div>
@@ -564,108 +564,14 @@ export function TaskTable({
 						</div>
 					) : (
 						sortedTasks.map((task) => (
-							<div
+							<MobileTaskCard
 								key={task.id}
-								className='rounded-lg bg-gradient-to-br from-gray-800/60 to-gray-800/40 border border-gray-700/50 p-4 space-y-3 hover:shadow-xl hover:border-gray-600 transition-all duration-200'
-							>
-								<div className='flex items-start justify-between gap-2'>
-									<div className='flex-1 min-w-0'>
-										<div className='flex items-center gap-2 mb-1'>
-											<span className='text-xs font-bold text-gray-500'>#{task.order}</span>
-											{task.metadata.abc && (
-												<span className={clsx(
-													'text-xs px-2 py-0.5 rounded-full font-bold',
-													getAbcClass(task.metadata.abc)
-												)}>
-													{task.metadata.abc}
-												</span>
-											)}
-											<a
-												href={`https://crmwest.ru/company/personal/user/156/tasks/task/view/${task.id}/`}
-												target='_blank'
-												rel='noopener noreferrer'
-												className='text-xs text-blue-400 hover:text-blue-300 font-mono'
-											>
-												ID: {task.id}
-											</a>
-										</div>
-										<h3 className='font-semibold text-white text-sm mb-1 break-words'>{task.title}</h3>
-										{task.description && (
-											<p className='text-xs text-gray-400 line-clamp-2 mb-2'>{task.description}</p>
-										)}
-									</div>
-								</div>
-
-								<div className='grid grid-cols-2 gap-2 text-xs'>
-									<div>
-										<span className='text-gray-500'>Ответственный:</span>
-										<p className='text-gray-300 font-medium'>{task.responsibleName || '—'}</p>
-									</div>
-									<div>
-										<span className='text-gray-500'>Статус:</span>
-										<div className='mt-1'><StatusBadge status={task.status} label={task.statusName} /></div>
-									</div>
-									{task.deadline && (
-										<div>
-											<span className='text-gray-500'>Дедлайн:</span>
-											<p className={clsx(
-												'text-gray-300 font-medium',
-												task.isOverdue && 'text-red-400'
-											)}>
-												{new Date(task.deadline).toLocaleString('ru-RU', {
-													day: '2-digit',
-													month: '2-digit',
-													hour: '2-digit',
-													minute: '2-digit',
-												})}
-											</p>
-										</div>
-									)}
-									{task.metadata.impact && (
-										<div>
-											<span className='text-gray-500'>Влияние:</span>
-											<p className='text-gray-300'>{task.metadata.impact}</p>
-										</div>
-									)}
-								</div>
-
-								{task.tags.length > 0 && (
-									<div className='flex flex-wrap gap-1'>
-										{task.tags.map((tag, idx) => (
-											<span
-												key={`${task.id}-mobile-tag-${idx}`}
-												className='rounded bg-gray-700 px-2 py-0.5 text-[10px] uppercase tracking-wide text-gray-400'
-											>
-												{tag}
-											</span>
-										))}
-									</div>
-								)}
-
-								<div className='flex justify-end gap-2 pt-2 border-t border-gray-700/50'>
-									<button
-										type='button'
-										onClick={() => onComplete(task)}
-										className='group rounded-lg border border-green-600/50 px-3 py-1.5 text-xs font-semibold text-green-400 transition-all duration-200 hover:bg-green-600/20'
-									>
-										<Check className='h-3.5 w-3.5' />
-									</button>
-									<button
-										type='button'
-										onClick={() => onEdit(task)}
-										className='group rounded-lg border border-blue-600/50 px-3 py-1.5 text-xs font-semibold text-blue-400 transition-all duration-200 hover:bg-blue-600/20'
-									>
-										<Edit className='h-3.5 w-3.5' />
-									</button>
-									<button
-										type='button'
-										onClick={() => onDelete(task)}
-										className='group rounded-lg border border-red-500/50 px-3 py-1.5 text-xs font-semibold text-red-400 transition-all duration-200 hover:bg-red-600/20'
-									>
-										<Trash2 className='h-3.5 w-3.5' />
-									</button>
-								</div>
-							</div>
+								task={task}
+								onComplete={onComplete}
+								onEdit={onEdit}
+								onDelete={onDelete}
+								isAdminMode={isAdminMode}
+							/>
 						))
 					)}
 				</div>
@@ -1735,7 +1641,249 @@ function InlineNumberInput({
 	)
 }
 
-function StatusBadge({ status, label }: { status: string; label: string }) {
+// Мобильная карточка задачи
+function MobileTaskCard({
+	task,
+	onComplete,
+	onEdit,
+	onDelete,
+	isAdminMode,
+}: {
+	task: TaskListItem
+	onComplete: (task: TaskListItem) => void
+	onEdit: (task: TaskListItem) => void
+	onDelete: (task: TaskListItem) => void
+	isAdminMode?: boolean
+}) {
+	const [expanded, setExpanded] = useState(false)
+
+	return (
+		<div
+			className={clsx(
+				'rounded-xl border transition-all duration-200 overflow-hidden',
+				task.isOverdue
+					? 'bg-gradient-to-br from-red-900/20 to-red-900/10 border-red-700/50'
+					: task.metadata.p === 'P0'
+					? 'bg-gradient-to-br from-purple-900/20 to-purple-900/10 border-purple-700/50'
+					: 'bg-gradient-to-br from-gray-800/60 to-gray-800/40 border-gray-700/50',
+				'hover:shadow-xl hover:border-gray-600'
+			)}
+		>
+			{/* Шапка карточки */}
+			<div className='p-4 pb-3'>
+				{/* Верхняя строка с бэйджами */}
+				<div className='flex items-center gap-2 mb-2 flex-wrap'>
+					<span className='text-[10px] font-mono font-bold text-gray-500'>#{task.order}</span>
+					
+					{task.metadata.p && (
+						<span className={clsx(
+							'text-[10px] px-2 py-0.5 rounded-full font-bold uppercase',
+							getPriorityClass(task.metadata.p)
+						)}>
+							{task.metadata.p}
+						</span>
+					)}
+					
+					{task.metadata.abc && (
+						<span className={clsx(
+							'text-[10px] px-2 py-0.5 rounded-full font-bold',
+							getAbcClass(task.metadata.abc)
+						)}>
+							ABC: {task.metadata.abc}
+						</span>
+					)}
+					
+					{task.isOverdue && (
+						<span className='flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full font-bold bg-red-500/20 text-red-300 border border-red-500/40'>
+							<AlertCircle className='h-3 w-3' />
+							Просрочено
+						</span>
+					)}
+
+					<a
+						href={`https://crmwest.ru/company/personal/user/156/tasks/task/view/${task.id}/`}
+						target='_blank'
+						rel='noopener noreferrer'
+						className='ml-auto text-[10px] text-blue-400 hover:text-blue-300 font-mono'
+					>
+						#{task.id}
+					</a>
+				</div>
+
+				{/* Заголовок */}
+				<h3 className='font-semibold text-white text-sm mb-2 break-words leading-snug'>
+					{task.title}
+				</h3>
+
+				{/* Основная информация - компактно */}
+				<div className='space-y-1.5'>
+					{/* Ответственный и статус */}
+					<div className='flex items-center justify-between gap-2'>
+						<div className='flex items-center gap-1.5 min-w-0 flex-1'>
+							<span className='text-[10px] text-gray-500 shrink-0'>👤</span>
+							<span className='text-xs text-gray-300 font-medium truncate'>{task.responsibleName || '—'}</span>
+						</div>
+						<StatusBadge status={task.status} label={task.statusName} compact />
+					</div>
+
+					{/* Дедлайн */}
+					{task.deadline && (
+						<div className='flex items-center gap-1.5'>
+							<span className='text-[10px] text-gray-500'>📅</span>
+							<span className={clsx(
+								'text-xs font-medium',
+								task.isOverdue ? 'text-red-400' : 'text-gray-300'
+							)}>
+								{new Date(task.deadline).toLocaleString('ru-RU', {
+									day: '2-digit',
+									month: '2-digit',
+									year: '2-digit',
+									hour: '2-digit',
+									minute: '2-digit',
+								})}
+							</span>
+						</div>
+					)}
+
+					{/* Система */}
+					{task.metadata.system && (
+						<div className='flex items-center gap-1.5'>
+							<span className='text-[10px] text-gray-500'>⚙️</span>
+							<span className='text-xs text-gray-300'>{task.metadata.system}</span>
+						</div>
+					)}
+
+					{/* Отделы - если есть */}
+					{task.metadata.departments && task.metadata.departments.length > 0 && (
+						<div className='flex items-start gap-1.5'>
+							<span className='text-[10px] text-gray-500 mt-0.5'>🏢</span>
+							<div className='flex flex-wrap gap-1'>
+								{task.metadata.departments.slice(0, 3).map((dept, idx) => (
+									<span
+										key={idx}
+										className='text-[10px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-300 border border-blue-500/30'
+									>
+										{dept}
+									</span>
+								))}
+								{task.metadata.departments.length > 3 && (
+									<span className='text-[10px] text-gray-500'>
+										+{task.metadata.departments.length - 3}
+									</span>
+								)}
+							</div>
+						</div>
+					)}
+				</div>
+
+				{/* Кнопка развернуть */}
+				{(task.description || task.metadata.impact || task.metadata.weight || task.tags.length > 0) && (
+					<button
+						onClick={() => setExpanded(!expanded)}
+						className='mt-3 w-full flex items-center justify-center gap-1 text-xs text-gray-400 hover:text-gray-300 transition'
+					>
+						<ChevronDown className={clsx('h-4 w-4 transition-transform', expanded && 'rotate-180')} />
+						{expanded ? 'Скрыть детали' : 'Показать детали'}
+					</button>
+				)}
+			</div>
+
+			{/* Расширенная информация */}
+			{expanded && (
+				<div className='px-4 pb-3 pt-0 border-t border-gray-700/30 space-y-2'>
+					{task.description && (
+						<div>
+							<span className='text-[10px] text-gray-500 uppercase tracking-wide'>Описание</span>
+							<p className='text-xs text-gray-300 mt-1 leading-relaxed'>{task.description}</p>
+						</div>
+					)}
+
+					<div className='grid grid-cols-2 gap-2'>
+						{task.metadata.impact && (
+							<div>
+								<span className='text-[10px] text-gray-500 uppercase tracking-wide block'>Влияние</span>
+								<span className={clsx(
+									'text-xs font-medium inline-block mt-1',
+									getImpactTextClass(task.metadata.impact)
+								)}>
+									{task.metadata.impact}
+								</span>
+							</div>
+						)}
+
+						{task.metadata.weight != null && (
+							<div>
+								<span className='text-[10px] text-gray-500 uppercase tracking-wide block'>Вес</span>
+								<span className='text-xs text-gray-300 font-bold inline-block mt-1'>
+									{task.metadata.weight}
+								</span>
+							</div>
+						)}
+					</div>
+
+					{task.tags.length > 0 && (
+						<div>
+							<span className='text-[10px] text-gray-500 uppercase tracking-wide block mb-1.5'>Теги</span>
+							<div className='flex flex-wrap gap-1'>
+								{task.tags.map((tag, idx) => (
+									<span
+										key={`${task.id}-tag-${idx}`}
+										className='text-[10px] px-2 py-0.5 rounded bg-gray-700/50 text-gray-400 border border-gray-600/50'
+									>
+										{tag}
+									</span>
+								))}
+							</div>
+						</div>
+					)}
+				</div>
+			)}
+
+			{/* Кнопки действий */}
+			{isAdminMode && (
+				<div className='px-4 pb-3 flex gap-2 border-t border-gray-700/30 pt-3'>
+					<button
+						type='button'
+						onClick={() => onComplete(task)}
+						className='flex-1 flex items-center justify-center gap-1.5 rounded-lg border border-green-600/50 bg-green-600/10 px-3 py-2 text-xs font-semibold text-green-400 transition-all duration-200 hover:bg-green-600/20 active:scale-95'
+					>
+						<Check className='h-4 w-4' />
+						Готово
+					</button>
+					<button
+						type='button'
+						onClick={() => onEdit(task)}
+						className='flex items-center justify-center rounded-lg border border-blue-600/50 bg-blue-600/10 px-3 py-2 text-xs font-semibold text-blue-400 transition-all duration-200 hover:bg-blue-600/20 active:scale-95'
+					>
+						<Edit className='h-4 w-4' />
+					</button>
+					<button
+						type='button'
+						onClick={() => onDelete(task)}
+						className='flex items-center justify-center rounded-lg border border-red-500/50 bg-red-500/10 px-3 py-2 text-xs font-semibold text-red-400 transition-all duration-200 hover:bg-red-600/20 active:scale-95'
+					>
+						<Trash2 className='h-4 w-4' />
+					</button>
+				</div>
+			)}
+		</div>
+	)
+}
+
+function getImpactTextClass(impact: string | null | undefined): string {
+	switch (impact) {
+		case 'Сильное':
+			return 'text-red-400'
+		case 'Умеренное':
+			return 'text-orange-400'
+		case 'Слабое':
+			return 'text-yellow-400'
+		default:
+			return 'text-gray-400'
+	}
+}
+
+function StatusBadge({ status, label, compact }: { status: string; label: string; compact?: boolean }) {
 	const styles: Record<string, string> = {
 		'1': 'bg-gray-800 text-gray-300 border border-gray-700',
 		'2': 'bg-yellow-900/40 text-yellow-200 border border-yellow-700/60',
@@ -1746,14 +1894,25 @@ function StatusBadge({ status, label }: { status: string; label: string }) {
 		'7': 'bg-red-900/40 text-red-200 border border-red-700/60',
 	}
 
+	const shortLabels: Record<string, string> = {
+		'1': 'Новая',
+		'2': 'Ждёт',
+		'3': 'В работе',
+		'4': 'Контроль',
+		'5': 'Готово',
+		'6': 'Отложена',
+		'7': 'Отклонена',
+	}
+
 	return (
 		<span
 			className={clsx(
-				'inline-flex rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide',
+				'inline-flex rounded-full font-semibold uppercase tracking-wide shrink-0',
+				compact ? 'px-2 py-0.5 text-[10px]' : 'px-3 py-1 text-xs',
 				styles[status] ?? styles['1']
 			)}
 		>
-			{label}
+			{compact ? shortLabels[status] || label : label}
 		</span>
 	)
 }
