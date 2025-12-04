@@ -90,10 +90,8 @@ export function TaskTable({
 	})
 	const [hideRequests, setHideRequests] = useState(true)
 	const [groupBy, setGroupBy] = useState<GroupBy>('priority')
-	const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => {
-		// По умолчанию все группы свернуты
-		return new Set()
-	})
+	const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
+	const [previousGroupBy, setPreviousGroupBy] = useState<GroupBy>(groupBy)
 	const [showStats, setShowStats] = useState(false)
 	const [compactMode, setCompactMode] = useState(false)
 	const [excludedTaskIds, setExcludedTaskIds] = useState<Set<string>>(() => {
@@ -290,9 +288,6 @@ export function TaskTable({
 		}
 
 		const groups: Record<string, TaskListItem[]> = {}
-		
-		// Сбрасываем collapsedGroups при изменении группировки, но оставляем все свернутыми
-		const newCollapsedGroups = new Set<string>()
 
 		sortedTasks.forEach(task => {
 			let groupKey = 'Без группы'
@@ -337,20 +332,47 @@ export function TaskTable({
 
 			if (!groups[groupKey]) {
 				groups[groupKey] = []
-				newCollapsedGroups.add(groupKey) // Автоматически сворачиваем новые группы
 			}
 			groups[groupKey].push(task)
-		})
-		
-		// Обновляем collapsedGroups с новыми группами
-		setCollapsedGroups(prev => {
-			const merged = new Set(prev)
-			newCollapsedGroups.forEach(key => merged.add(key))
-			return merged
 		})
 
 		return groups
 	}, [sortedTasks, groupBy])
+	
+	// Управление состоянием групп
+	useEffect(() => {
+		// Если изменился тип группировки - сворачиваем все группы
+		if (previousGroupBy !== groupBy) {
+			setPreviousGroupBy(groupBy)
+			if (groupBy !== 'none') {
+				const allGroupKeys = Object.keys(groupedTasks)
+				setCollapsedGroups(new Set(allGroupKeys.filter(key => key !== 'Все задачи')))
+			}
+			return
+		}
+		
+		// Если обновились данные, но тип группировки не изменился
+		if (groupBy === 'none') return
+		
+		const currentGroupKeys = Object.keys(groupedTasks)
+		
+		setCollapsedGroups(prev => {
+			const updated = new Set(prev)
+			// Добавляем только действительно новые группы как свернутые
+			currentGroupKeys.forEach(key => {
+				if (!prev.has(key) && key !== 'Все задачи') {
+					updated.add(key)
+				}
+			})
+			// Удаляем группы, которых больше нет
+			prev.forEach(key => {
+				if (!currentGroupKeys.includes(key)) {
+					updated.delete(key)
+				}
+			})
+			return updated
+		})
+	}, [groupedTasks, groupBy, previousGroupBy])
 
 	const toggleGroup = (groupKey: string) => {
 		setCollapsedGroups(prev => {

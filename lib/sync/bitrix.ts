@@ -31,6 +31,9 @@ export class BitrixSyncService {
     // 2. Save to SQLite
     await this.saveTasksToDb(allTasks, usersMap);
     
+    // 3. Удаляем задачи, которые больше не существуют в Битриксе
+    await this.removeDeletedTasks(allTasks, userIds);
+    
     console.log(`✅ Sync complete.`);
   }
 
@@ -354,6 +357,89 @@ export class BitrixSyncService {
   private async enrichTasks(tasks: BitrixTask[]): Promise<BitrixTask[]> {
     const taskService = new TaskService(this.client);
     return await taskService.enrichTasksData(tasks);
+  }
+
+  /**
+   * Удаляет задачи из БД, которые больше не существуют в Битриксе
+   */
+  private async removeDeletedTasks(bitrixTasks: BitrixTask[], userIds: string[]) {
+    // Получаем ID всех задач из Битрикса
+    const bitrixTaskIds = new Set(
+      bitrixTasks.map(task => String((task as any).id || (task as any).ID))
+    );
+    
+    // Получаем все задачи из БД для этих пользователей
+    const dbTasks = await prisma.task.findMany({
+      where: {
+        responsibleId: {
+          in: userIds
+        }
+      },
+      select: {
+        id: true
+      }
+    });
+    
+    // Находим задачи, которые есть в БД, но нет в Битриксе
+    const tasksToDelete = dbTasks.filter(task => !bitrixTaskIds.has(task.id));
+    
+    if (tasksToDelete.length > 0) {
+      console.log(`🗑️  Удаляем ${tasksToDelete.length} задач, которые больше не существуют в Битриксе...`);
+      
+      // Удаляем задачи (каскадное удаление связей настроено в схеме)
+      await prisma.task.deleteMany({
+        where: {
+          id: {
+            in: tasksToDelete.map(t => t.id)
+          }
+        }
+      });
+      
+      console.log(`✅ Удалено ${tasksToDelete.length} задач`);
+      
+      // Очищаем неиспользуемые теги (теги без задач)
+      const unusedTags = await prisma.tag.findMany({
+        where: {
+          tasks: {
+            none: {}
+          }
+        }
+      });
+      
+      if (unusedTags.length > 0) {
+        await prisma.tag.deleteMany({
+          where: {
+            id: {
+              in: unusedTags.map(t => t.id)
+            }
+          }
+        });
+        console.log(`🧹 Очищено ${unusedTags.length} неиспользуемых тегов`);
+      }
+      
+      // Очищаем неиспользуемые отделы (только созданные вручную, начинающиеся с custom_)
+      const unusedDepartments = await prisma.department.findMany({
+        where: {
+          AND: [
+            { id: { startsWith: 'custom_' } },
+            { tasks: { none: {} } }
+          ]
+        }
+      });
+      
+      if (unusedDepartments.length > 0) {
+        await prisma.department.deleteMany({
+          where: {
+            id: {
+              in: unusedDepartments.map(d => d.id)
+            }
+          }
+        });
+        console.log(`🧹 Очищено ${unusedDepartments.length} неиспользуемых отделов`);
+      }
+    } else {
+      console.log(`✅ Нет задач для удаления`);
+    }
   }
 
   /**
