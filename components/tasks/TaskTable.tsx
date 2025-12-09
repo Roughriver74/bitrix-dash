@@ -17,14 +17,36 @@ import {
 	useSortable,
 	verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
-import { GripVertical, Check, Edit, Trash2, X, ChevronDown, ChevronRight, BarChart3, Minimize2, Maximize2, AlertCircle, Search, EyeOff, RefreshCw } from 'lucide-react'
+import {
+	GripVertical,
+	Check,
+	Edit,
+	Trash2,
+	X,
+	ChevronDown,
+	ChevronRight,
+	BarChart3,
+	Minimize2,
+	Maximize2,
+	AlertCircle,
+	Search,
+	EyeOff,
+	RefreshCw,
+} from 'lucide-react'
 import clsx from 'clsx'
 import React, { useState, useRef, useEffect, useMemo } from 'react'
 import { TaskListItem } from '@/components/tasks/types'
 import { PRIORITY_LEVELS, getPriorityClass } from '@/lib/tasks/priorities'
 import { AVAILABLE_SYSTEMS } from '@/lib/tasks/systems'
 
-type GroupBy = 'none' | 'abc' | 'status' | 'responsible' | 'impact' | 'priority' | 'department'
+type GroupBy =
+	| 'none'
+	| 'abc'
+	| 'status'
+	| 'responsible'
+	| 'impact'
+	| 'priority'
+	| 'department'
 
 interface TaskTableProps {
 	tasks: TaskListItem[]
@@ -90,8 +112,15 @@ export function TaskTable({
 	})
 	const [hideRequests, setHideRequests] = useState(true)
 	const [groupBy, setGroupBy] = useState<GroupBy>('priority')
-	const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
+	const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => {
+		if (typeof window !== 'undefined') {
+			const saved = localStorage.getItem(`collapsedGroups_${groupBy}`)
+			return new Set(saved ? JSON.parse(saved) : [])
+		}
+		return new Set()
+	})
 	const [previousGroupBy, setPreviousGroupBy] = useState<GroupBy>(groupBy)
+	const previousGroupKeysRef = useRef<Set<string>>(new Set())
 	const [showStats, setShowStats] = useState(false)
 	const [compactMode, setCompactMode] = useState(false)
 	const [excludedTaskIds, setExcludedTaskIds] = useState<Set<string>>(() => {
@@ -109,7 +138,10 @@ export function TaskTable({
 	}, [systems])
 
 	useEffect(() => {
-		localStorage.setItem('excludedTaskIds', JSON.stringify(Array.from(excludedTaskIds)))
+		localStorage.setItem(
+			'excludedTaskIds',
+			JSON.stringify(Array.from(excludedTaskIds))
+		)
 	}, [excludedTaskIds])
 
 	const sensors = useSensors(
@@ -129,16 +161,21 @@ export function TaskTable({
 			if (excludedTaskIds.has(task.id)) return false
 			if (filters.abc && task.metadata.abc !== filters.abc) return false
 			if (filters.status && task.status !== filters.status) return false
-			if (filters.impact && task.metadata.impact !== filters.impact) return false
+			if (filters.impact && task.metadata.impact !== filters.impact)
+				return false
 			if (
 				filters.system &&
-				!task.metadata.system?.toLowerCase().includes(filters.system.toLowerCase())
+				!task.metadata.system
+					?.toLowerCase()
+					.includes(filters.system.toLowerCase())
 			)
 				return false
 			if (filters.p && task.metadata.p !== filters.p) return false
 			if (
 				filters.responsibleName &&
-				!task.responsibleName?.toLowerCase().includes(filters.responsibleName.toLowerCase())
+				!task.responsibleName
+					?.toLowerCase()
+					.includes(filters.responsibleName.toLowerCase())
 			)
 				return false
 			// Фильтр по отделам - проверяем, есть ли выбранный отдел в списке отделов задачи
@@ -150,7 +187,7 @@ export function TaskTable({
 			}
 			// Фильтр "Заявки" - исключаем задачи со словом "Заявка" в названии или тегами BUG, FIN
 			if (hideRequests) {
-				const hasHiddenTag = task.tags.some(tag => 
+				const hasHiddenTag = task.tags.some(tag =>
 					['BUG', 'FIN'].includes(tag.toUpperCase())
 				)
 				if (task.title.toLowerCase().includes('заявка') || hasHiddenTag) {
@@ -180,11 +217,12 @@ export function TaskTable({
 		setHideRequests(false)
 	}
 
-	const hasActiveFilters = Object.values(filters).some(f => f !== '') || hideRequests
+	const hasActiveFilters =
+		Object.values(filters).some(f => f !== '') || hideRequests
 
 	// Сортируем задачи по приоритету P0-P3
 	const sortedTasks = useMemo(() => {
-		const priorityOrder: Record<string, number> = { 'P0': 0, 'P1': 1, 'P2': 2, 'P3': 3 }
+		const priorityOrder: Record<string, number> = { P0: 0, P1: 1, P2: 2, P3: 3 }
 
 		// Добавляем индекс для стабильной сортировки
 		const tasksWithIndex = filteredTasks.map((task, index) => ({ task, index }))
@@ -274,7 +312,8 @@ export function TaskTable({
 			},
 			byImpact: {
 				high: sortedTasks.filter(t => t.metadata.impact === 'Сильное').length,
-				medium: sortedTasks.filter(t => t.metadata.impact === 'Умеренное').length,
+				medium: sortedTasks.filter(t => t.metadata.impact === 'Умеренное')
+					.length,
 				low: sortedTasks.filter(t => t.metadata.impact === 'Слабое').length,
 			},
 			overdue: sortedTasks.filter(t => t.isOverdue).length,
@@ -294,7 +333,9 @@ export function TaskTable({
 
 			switch (groupBy) {
 				case 'abc':
-					groupKey = task.metadata.abc ? `ABC: ${task.metadata.abc}` : 'ABC: Не задано'
+					groupKey = task.metadata.abc
+						? `ABC: ${task.metadata.abc}`
+						: 'ABC: Не задано'
 					break
 				case 'status':
 					const statusMap: Record<string, string> = {
@@ -321,7 +362,10 @@ export function TaskTable({
 					break
 				case 'department':
 					// Если у задачи несколько отделов, создаем группу для каждого
-					if (task.metadata.departments && task.metadata.departments.length > 0) {
+					if (
+						task.metadata.departments &&
+						task.metadata.departments.length > 0
+					) {
 						// Берем первый отдел для группировки (можно изменить логику)
 						groupKey = `Отдел: ${task.metadata.departments[0]}`
 					} else {
@@ -338,46 +382,101 @@ export function TaskTable({
 
 		return groups
 	}, [sortedTasks, groupBy])
-	
-	// Мемоизированный массив ключей групп для стабильного сравнения
-	const groupKeys = useMemo(() => {
-		return Object.keys(groupedTasks).sort().join('|')
-	}, [groupedTasks])
-	
+
+	// Сохранение состояния свернутых групп в localStorage
+	useEffect(() => {
+		if (typeof window !== 'undefined' && groupBy !== 'none') {
+			localStorage.setItem(
+				`collapsedGroups_${groupBy}`,
+				JSON.stringify(Array.from(collapsedGroups))
+			)
+		}
+	}, [collapsedGroups, groupBy])
+
 	// Управление состоянием групп
 	useEffect(() => {
-		// Если изменился тип группировки - сворачиваем все группы
+		// Если изменился тип группировки - загружаем сохраненное состояние или сворачиваем все группы
 		if (previousGroupBy !== groupBy) {
 			setPreviousGroupBy(groupBy)
 			if (groupBy !== 'none') {
-				const allGroupKeys = Object.keys(groupedTasks)
-				setCollapsedGroups(new Set(allGroupKeys.filter(key => key !== 'Все задачи')))
+				// Пытаемся загрузить сохраненное состояние для нового типа группировки
+				if (typeof window !== 'undefined') {
+					const saved = localStorage.getItem(`collapsedGroups_${groupBy}`)
+					if (saved) {
+						const savedGroups = new Set(JSON.parse(saved))
+						const currentGroupKeys = Object.keys(groupedTasks)
+						// Фильтруем только существующие группы
+						const validSavedGroups = new Set(
+							Array.from(savedGroups).filter(key =>
+								currentGroupKeys.includes(key)
+							)
+						)
+						// Добавляем новые группы как свернутые
+						currentGroupKeys.forEach(key => {
+							if (key !== 'Все задачи' && !validSavedGroups.has(key)) {
+								validSavedGroups.add(key)
+							}
+						})
+						setCollapsedGroups(validSavedGroups)
+					} else {
+						// Если нет сохраненного состояния, сворачиваем все кроме "Все задачи"
+						const allGroupKeys = Object.keys(groupedTasks)
+						setCollapsedGroups(
+							new Set(allGroupKeys.filter(key => key !== 'Все задачи'))
+						)
+					}
+				} else {
+					const allGroupKeys = Object.keys(groupedTasks)
+					setCollapsedGroups(
+						new Set(allGroupKeys.filter(key => key !== 'Все задачи'))
+					)
+				}
+			} else {
+				setCollapsedGroups(new Set())
 			}
+			previousGroupKeysRef.current = new Set(Object.keys(groupedTasks))
 			return
 		}
-		
+
 		// Если обновились данные, но тип группировки не изменился
-		if (groupBy === 'none') return
-		
-		const currentGroupKeys = Object.keys(groupedTasks)
-		
-		setCollapsedGroups(prev => {
-			const updated = new Set(prev)
-			// Добавляем только действительно новые группы как свернутые
-			currentGroupKeys.forEach(key => {
-				if (!prev.has(key) && key !== 'Все задачи') {
-					updated.add(key)
-				}
-			})
-			// Удаляем группы, которых больше нет
-			prev.forEach(key => {
-				if (!currentGroupKeys.includes(key)) {
+		if (groupBy === 'none') {
+			previousGroupKeysRef.current = new Set(Object.keys(groupedTasks))
+			return
+		}
+
+		const currentGroupKeys = new Set(Object.keys(groupedTasks))
+		const previousGroupKeys = previousGroupKeysRef.current
+
+		// Проверяем, изменилась ли структура групп (добавились или удалились группы)
+		const groupsAdded = Array.from(currentGroupKeys).filter(
+			key => !previousGroupKeys.has(key)
+		)
+		const groupsRemoved = Array.from(previousGroupKeys).filter(
+			key => !currentGroupKeys.has(key)
+		)
+
+		// Обновляем состояние только если структура групп действительно изменилась
+		if (groupsAdded.length > 0 || groupsRemoved.length > 0) {
+			setCollapsedGroups(prev => {
+				const updated = new Set(prev)
+				// Добавляем только действительно новые группы как свернутые
+				groupsAdded.forEach(key => {
+					if (key !== 'Все задачи') {
+						updated.add(key)
+					}
+				})
+				// Удаляем группы, которых больше нет
+				groupsRemoved.forEach(key => {
 					updated.delete(key)
-				}
+				})
+				return updated
 			})
-			return updated
-		})
-	}, [groupKeys, groupBy, previousGroupBy, groupedTasks])
+			previousGroupKeysRef.current = currentGroupKeys
+		} else {
+			// Если структура групп не изменилась, просто обновляем ref без изменения состояния
+			previousGroupKeysRef.current = currentGroupKeys
+		}
+	}, [groupBy, previousGroupBy, groupedTasks])
 
 	const toggleGroup = (groupKey: string) => {
 		setCollapsedGroups(prev => {
@@ -392,7 +491,9 @@ export function TaskTable({
 	}
 
 	// Быстрые фильтры
-	const applyQuickFilter = (type: 'myTasks' | 'urgent' | 'today' | 'highPriority') => {
+	const applyQuickFilter = (
+		type: 'myTasks' | 'urgent' | 'today' | 'highPriority'
+	) => {
 		clearFilters()
 		switch (type) {
 			case 'urgent':
@@ -430,7 +531,9 @@ export function TaskTable({
 							)}
 							title='Синхронизировать с Bitrix24'
 						>
-							<RefreshCw className={clsx('h-3.5 w-3.5', loading && 'animate-spin')} />
+							<RefreshCw
+								className={clsx('h-3.5 w-3.5', loading && 'animate-spin')}
+							/>
 							Sync
 						</button>
 					)}
@@ -504,9 +607,7 @@ export function TaskTable({
 							{hideRequests ? 'Заявки скрыты' : 'Скрыть заявки'}
 						</button>
 						{stats.overdue > 0 && (
-							<button
-								className='px-3 py-1.5 text-xs rounded-md transition border bg-red-900/40 text-red-200 border-red-700/60 hover:bg-red-900/60'
-							>
+							<button className='px-3 py-1.5 text-xs rounded-md transition border bg-red-900/40 text-red-200 border-red-700/60 hover:bg-red-900/60'>
 								Просрочено: {stats.overdue}
 							</button>
 						)}
@@ -550,17 +651,29 @@ export function TaskTable({
 						<div className='bg-gray-900/50 rounded-lg p-3 border border-gray-700'>
 							<div className='text-xs text-gray-400 mb-1'>По статусу</div>
 							<div className='flex flex-col gap-0.5 text-xs'>
-								<span className='text-blue-400'>В работе: {stats.byStatus.inProgress}</span>
-								<span className='text-yellow-400'>Ожидает: {stats.byStatus.waiting}</span>
-								<span className='text-green-400'>Готово: {stats.byStatus.completed}</span>
+								<span className='text-blue-400'>
+									В работе: {stats.byStatus.inProgress}
+								</span>
+								<span className='text-yellow-400'>
+									Ожидает: {stats.byStatus.waiting}
+								</span>
+								<span className='text-green-400'>
+									Готово: {stats.byStatus.completed}
+								</span>
 							</div>
 						</div>
 						<div className='bg-gray-900/50 rounded-lg p-3 border border-gray-700'>
 							<div className='text-xs text-gray-400 mb-1'>По влиянию</div>
 							<div className='flex flex-col gap-0.5 text-xs'>
-								<span className='text-red-400'>Сильное: {stats.byImpact.high}</span>
-								<span className='text-orange-400'>Умеренное: {stats.byImpact.medium}</span>
-								<span className='text-yellow-400'>Слабое: {stats.byImpact.low}</span>
+								<span className='text-red-400'>
+									Сильное: {stats.byImpact.high}
+								</span>
+								<span className='text-orange-400'>
+									Умеренное: {stats.byImpact.medium}
+								</span>
+								<span className='text-yellow-400'>
+									Слабое: {stats.byImpact.low}
+								</span>
 							</div>
 						</div>
 						<div className='bg-gray-900/50 rounded-lg p-3 border border-gray-700'>
@@ -591,7 +704,10 @@ export function TaskTable({
 				<div className='p-2 space-y-2'>
 					{loading && filteredTasks.length === 0 ? (
 						Array.from({ length: 3 }).map((_, idx) => (
-							<div key={`skeleton-card-${idx}`} className='rounded-lg bg-gray-800/50 p-3 animate-pulse'>
+							<div
+								key={`skeleton-card-${idx}`}
+								className='rounded-lg bg-gray-800/50 p-3 animate-pulse'
+							>
 								<div className='h-4 w-3/4 bg-gray-700 rounded mb-2'></div>
 								<div className='h-3 w-full bg-gray-700 rounded mb-1.5'></div>
 								<div className='h-3 w-2/3 bg-gray-700 rounded'></div>
@@ -603,8 +719,8 @@ export function TaskTable({
 								? 'Задачи не найдены. Добавьте первую задачу.'
 								: 'Нет задач, соответствующих фильтрам.'}
 						</div>
-					) : (groupBy === 'none' || filters.searchQuery) ? (
-						sortedTasks.map((task) => (
+					) : groupBy === 'none' || filters.searchQuery ? (
+						sortedTasks.map(task => (
 							<MobileTaskCard
 								key={task.id}
 								task={task}
@@ -630,17 +746,19 @@ export function TaskTable({
 											) : (
 												<ChevronDown className='h-4 w-4 text-gray-400' />
 											)}
-											<span className='text-sm font-semibold text-gray-200'>{groupKey}</span>
+											<span className='text-sm font-semibold text-gray-200'>
+												{groupKey}
+											</span>
 										</div>
 										<span className='text-xs text-gray-400 bg-gray-700/50 px-2 py-0.5 rounded-full'>
 											{groupTasks.length}
-											</span>
+										</span>
 									</button>
-									
+
 									{/* Задачи группы */}
 									{!isCollapsed && (
 										<div className='space-y-2 pl-1'>
-											{groupTasks.map((task) => (
+											{groupTasks.map(task => (
 												<MobileTaskCard
 													key={task.id}
 													task={task}
@@ -649,9 +767,9 @@ export function TaskTable({
 													onDelete={onDelete}
 													isAdminMode={isAdminMode}
 												/>
-										))}
-									</div>
-								)}
+											))}
+										</div>
+									)}
 								</div>
 							)
 						})
@@ -725,7 +843,10 @@ export function TaskTable({
 										<select
 											value={filters.status}
 											onChange={e =>
-												setFilters(prev => ({ ...prev, status: e.target.value }))
+												setFilters(prev => ({
+													...prev,
+													status: e.target.value,
+												}))
 											}
 											className='w-full px-2 py-1 text-xs bg-gray-900 text-gray-300 border border-gray-700 rounded focus:border-blue-500 focus:outline-none'
 										>
@@ -757,7 +878,10 @@ export function TaskTable({
 										<select
 											value={filters.impact}
 											onChange={e =>
-												setFilters(prev => ({ ...prev, impact: e.target.value }))
+												setFilters(prev => ({
+													...prev,
+													impact: e.target.value,
+												}))
 											}
 											className='w-full px-2 py-1 text-xs bg-gray-900 text-gray-300 border border-gray-700 rounded focus:border-blue-500 focus:outline-none'
 										>
@@ -775,7 +899,10 @@ export function TaskTable({
 											placeholder='Фильтр...'
 											value={filters.system}
 											onChange={e =>
-												setFilters(prev => ({ ...prev, system: e.target.value }))
+												setFilters(prev => ({
+													...prev,
+													system: e.target.value,
+												}))
 											}
 											className='w-full px-2 py-1 text-xs bg-gray-900 text-gray-300 border border-gray-700 rounded focus:border-blue-500 focus:outline-none placeholder-gray-600'
 										/>
@@ -784,7 +911,10 @@ export function TaskTable({
 										<select
 											value={filters.department}
 											onChange={e =>
-												setFilters(prev => ({ ...prev, department: e.target.value }))
+												setFilters(prev => ({
+													...prev,
+													department: e.target.value,
+												}))
 											}
 											className='w-full px-2 py-1 text-xs bg-gray-900 text-gray-300 border border-gray-700 rounded focus:border-blue-500 focus:outline-none'
 										>
@@ -819,7 +949,10 @@ export function TaskTable({
 								{loading && filteredTasks.length === 0 ? (
 									// Skeleton loading state
 									Array.from({ length: 5 }).map((_, idx) => (
-										<tr key={`skeleton-${idx}`} className='border-b border-gray-800'>
+										<tr
+											key={`skeleton-${idx}`}
+											className='border-b border-gray-800'
+										>
 											<td className='px-4 py-4'>
 												<div className='h-4 w-8 bg-gray-800 rounded animate-pulse'></div>
 											</td>
@@ -873,7 +1006,7 @@ export function TaskTable({
 												: 'Нет задач, соответствующих фильтрам.'}
 										</td>
 									</tr>
-								) : (groupBy === 'none' || filters.searchQuery) ? (
+								) : groupBy === 'none' || filters.searchQuery ? (
 									sortedTasks.map((task, index) => (
 										<SortableRow
 											key={task.id}
@@ -1036,7 +1169,12 @@ function SortableRow({
 				compactMode && 'text-xs'
 			)}
 		>
-			<td className={clsx(cellPadding, 'text-sm font-semibold text-gray-400 relative')}>
+			<td
+				className={clsx(
+					cellPadding,
+					'text-sm font-semibold text-gray-400 relative'
+				)}
+			>
 				{task.isOverdue && (
 					<span className='absolute -left-1 top-1/2 -translate-y-1/2 w-2 h-2 bg-red-500 rounded-full animate-pulse' />
 				)}
@@ -1047,8 +1185,8 @@ function SortableRow({
 					type='button'
 					className={clsx(
 						'rounded p-2 transition',
-						isAdminMode 
-							? 'cursor-grab hover:bg-gray-800 hover:text-white active:cursor-grabbing' 
+						isAdminMode
+							? 'cursor-grab hover:bg-gray-800 hover:text-white active:cursor-grabbing'
 							: 'cursor-default text-gray-700'
 					)}
 					{...attributes}
@@ -1085,7 +1223,9 @@ function SortableRow({
 				/>
 			</td>
 			<td className={clsx(cellPadding, 'align-top')}>
-				<div className={clsx('space-y-1 max-w-md', compactMode && 'space-y-0.5')}>
+				<div
+					className={clsx('space-y-1 max-w-md', compactMode && 'space-y-0.5')}
+				>
 					<div className='font-semibold text-white break-words'>
 						{task.title}
 					</div>
@@ -1175,7 +1315,10 @@ function SortableRow({
 			<td className={clsx(cellPadding, 'text-sm text-gray-300')}>
 				<InlineMultiSelect
 					values={task.metadata.departments || []}
-					options={availableDepartments.map(d => ({ value: d.name, label: d.name }))}
+					options={availableDepartments.map(d => ({
+						value: d.name,
+						label: d.name,
+					}))}
 					onChange={values => {
 						onUpdate?.(task.id, {
 							metadata: {
@@ -1194,22 +1337,28 @@ function SortableRow({
 								headers: { 'Content-Type': 'application/json' },
 								body: JSON.stringify({ name }),
 							})
-							
+
 							if (!response.ok) {
 								const errorData = await response.json()
-								throw new Error(errorData.error || 'Failed to create department')
+								throw new Error(
+									errorData.error || 'Failed to create department'
+								)
 							}
-							
+
 							const data = await response.json()
-							
+
 							// Уведомляем родительский компонент о создании нового отдела
 							onDepartmentCreated?.(data.department)
-							
+
 							// Возвращаем название нового отдела
 							return data.department.name
 						} catch (error) {
 							console.error('Failed to create department:', error)
-							alert(error instanceof Error ? error.message : 'Не удалось создать отдел')
+							alert(
+								error instanceof Error
+									? error.message
+									: 'Не удалось создать отдел'
+							)
 							return null
 						}
 					}}
@@ -1533,7 +1682,7 @@ function InlineMultiSelect({
 
 	const handleCreateNew = async () => {
 		if (!searchTerm.trim() || !onCreateNew || isCreating) return
-		
+
 		setIsCreating(true)
 		try {
 			const newValue = await onCreateNew(searchTerm.trim())
@@ -1555,8 +1704,11 @@ function InlineMultiSelect({
 		.filter(Boolean)
 		.join(', ')
 
-	const canCreateNew = searchTerm.trim() && 
-		!filteredOptions.some(opt => opt.label.toLowerCase() === searchTerm.toLowerCase()) &&
+	const canCreateNew =
+		searchTerm.trim() &&
+		!filteredOptions.some(
+			opt => opt.label.toLowerCase() === searchTerm.toLowerCase()
+		) &&
 		onCreateNew
 
 	return (
@@ -1755,26 +1907,32 @@ function MobileTaskCard({
 			<div className='p-3 pb-2'>
 				{/* Верхняя строка с бэйджами */}
 				<div className='flex items-center gap-1.5 mb-1.5 flex-wrap'>
-					<span className='text-[10px] font-mono font-bold text-gray-500'>#{task.order}</span>
-					
+					<span className='text-[10px] font-mono font-bold text-gray-500'>
+						#{task.order}
+					</span>
+
 					{task.metadata.p && (
-						<span className={clsx(
-							'text-[10px] px-2 py-0.5 rounded-full font-bold uppercase',
-							getPriorityClass(task.metadata.p)
-						)}>
+						<span
+							className={clsx(
+								'text-[10px] px-2 py-0.5 rounded-full font-bold uppercase',
+								getPriorityClass(task.metadata.p)
+							)}
+						>
 							{task.metadata.p}
 						</span>
 					)}
-					
+
 					{task.metadata.abc && (
-						<span className={clsx(
-							'text-[10px] px-2 py-0.5 rounded-full font-bold',
-							getAbcClass(task.metadata.abc)
-						)}>
+						<span
+							className={clsx(
+								'text-[10px] px-2 py-0.5 rounded-full font-bold',
+								getAbcClass(task.metadata.abc)
+							)}
+						>
 							ABC: {task.metadata.abc}
 						</span>
 					)}
-					
+
 					{task.isOverdue && (
 						<span className='flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full font-bold bg-red-500/20 text-red-300 border border-red-500/40'>
 							<AlertCircle className='h-3 w-3' />
@@ -1803,7 +1961,9 @@ function MobileTaskCard({
 					<div className='flex items-center justify-between gap-2'>
 						<div className='flex items-center gap-1.5 min-w-0 flex-1'>
 							<span className='text-[10px] text-gray-500 shrink-0'>👤</span>
-							<span className='text-xs text-gray-300 font-medium truncate'>{task.responsibleName || '—'}</span>
+							<span className='text-xs text-gray-300 font-medium truncate'>
+								{task.responsibleName || '—'}
+							</span>
 						</div>
 						<StatusBadge status={task.status} label={task.statusName} compact />
 					</div>
@@ -1812,10 +1972,12 @@ function MobileTaskCard({
 					{task.deadline && (
 						<div className='flex items-center gap-1.5'>
 							<span className='text-[10px] text-gray-500'>📅</span>
-							<span className={clsx(
-								'text-xs font-medium',
-								task.isOverdue ? 'text-red-400' : 'text-gray-300'
-							)}>
+							<span
+								className={clsx(
+									'text-xs font-medium',
+									task.isOverdue ? 'text-red-400' : 'text-gray-300'
+								)}
+							>
 								{new Date(task.deadline).toLocaleString('ru-RU', {
 									day: '2-digit',
 									month: '2-digit',
@@ -1831,40 +1993,51 @@ function MobileTaskCard({
 					{task.metadata.system && (
 						<div className='flex items-center gap-1.5'>
 							<span className='text-[10px] text-gray-500'>⚙️</span>
-							<span className='text-xs text-gray-300'>{task.metadata.system}</span>
+							<span className='text-xs text-gray-300'>
+								{task.metadata.system}
+							</span>
 						</div>
 					)}
 
 					{/* Отделы - если есть */}
-					{task.metadata.departments && task.metadata.departments.length > 0 && (
-						<div className='flex items-center gap-1.5'>
-							<span className='text-[10px] text-gray-500'>🏢</span>
-							<div className='flex flex-wrap gap-1 items-center'>
-								{task.metadata.departments.slice(0, 2).map((dept, idx) => (
-									<span
-										key={idx}
-										className='text-[10px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-300 border border-blue-500/30'
-									>
-										{dept}
-									</span>
-								))}
-								{task.metadata.departments.length > 2 && (
-									<span className='text-[10px] text-gray-400 font-medium'>
-										+{task.metadata.departments.length - 2}
-									</span>
-								)}
+					{task.metadata.departments &&
+						task.metadata.departments.length > 0 && (
+							<div className='flex items-center gap-1.5'>
+								<span className='text-[10px] text-gray-500'>🏢</span>
+								<div className='flex flex-wrap gap-1 items-center'>
+									{task.metadata.departments.slice(0, 2).map((dept, idx) => (
+										<span
+											key={idx}
+											className='text-[10px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-300 border border-blue-500/30'
+										>
+											{dept}
+										</span>
+									))}
+									{task.metadata.departments.length > 2 && (
+										<span className='text-[10px] text-gray-400 font-medium'>
+											+{task.metadata.departments.length - 2}
+										</span>
+									)}
+								</div>
 							</div>
-						</div>
-					)}
+						)}
 				</div>
 
 				{/* Кнопка развернуть */}
-				{(task.description || task.metadata.impact || task.metadata.weight || task.tags.length > 0) && (
+				{(task.description ||
+					task.metadata.impact ||
+					task.metadata.weight ||
+					task.tags.length > 0) && (
 					<button
 						onClick={() => setExpanded(!expanded)}
 						className='mt-2 w-full flex items-center justify-center gap-1 text-[10px] text-gray-400 hover:text-gray-300 transition py-1'
 					>
-						<ChevronDown className={clsx('h-3 w-3 transition-transform', expanded && 'rotate-180')} />
+						<ChevronDown
+							className={clsx(
+								'h-3 w-3 transition-transform',
+								expanded && 'rotate-180'
+							)}
+						/>
 						{expanded ? 'Скрыть' : 'Детали'}
 					</button>
 				)}
@@ -1875,19 +2048,27 @@ function MobileTaskCard({
 				<div className='px-3 pb-2 pt-0 border-t border-gray-700/30 space-y-1.5'>
 					{task.description && (
 						<div className='pt-1'>
-							<span className='text-[10px] text-gray-500 uppercase tracking-wide block mb-1'>Описание</span>
-							<p className='text-xs text-gray-300 leading-snug'>{task.description}</p>
+							<span className='text-[10px] text-gray-500 uppercase tracking-wide block mb-1'>
+								Описание
+							</span>
+							<p className='text-xs text-gray-300 leading-snug'>
+								{task.description}
+							</p>
 						</div>
 					)}
 
 					<div className='grid grid-cols-2 gap-1.5'>
 						{task.metadata.impact && (
 							<div>
-								<span className='text-[10px] text-gray-500 uppercase tracking-wide block'>Влияние</span>
-								<span className={clsx(
-									'text-xs font-medium inline-block mt-1',
-									getImpactTextClass(task.metadata.impact)
-								)}>
+								<span className='text-[10px] text-gray-500 uppercase tracking-wide block'>
+									Влияние
+								</span>
+								<span
+									className={clsx(
+										'text-xs font-medium inline-block mt-1',
+										getImpactTextClass(task.metadata.impact)
+									)}
+								>
 									{task.metadata.impact}
 								</span>
 							</div>
@@ -1895,7 +2076,9 @@ function MobileTaskCard({
 
 						{task.metadata.weight != null && (
 							<div>
-								<span className='text-[10px] text-gray-500 uppercase tracking-wide block'>Вес</span>
+								<span className='text-[10px] text-gray-500 uppercase tracking-wide block'>
+									Вес
+								</span>
 								<span className='text-xs text-gray-300 font-bold inline-block mt-1'>
 									{task.metadata.weight}
 								</span>
@@ -1905,7 +2088,9 @@ function MobileTaskCard({
 
 					{task.tags.length > 0 && (
 						<div>
-							<span className='text-[10px] text-gray-500 uppercase tracking-wide block mb-1'>Теги</span>
+							<span className='text-[10px] text-gray-500 uppercase tracking-wide block mb-1'>
+								Теги
+							</span>
 							<div className='flex flex-wrap gap-1'>
 								{task.tags.map((tag, idx) => (
 									<span
@@ -1965,7 +2150,15 @@ function getImpactTextClass(impact: string | null | undefined): string {
 	}
 }
 
-function StatusBadge({ status, label, compact }: { status: string; label: string; compact?: boolean }) {
+function StatusBadge({
+	status,
+	label,
+	compact,
+}: {
+	status: string
+	label: string
+	compact?: boolean
+}) {
 	const styles: Record<string, string> = {
 		'1': 'bg-gray-800 text-gray-300 border border-gray-700',
 		'2': 'bg-yellow-900/40 text-yellow-200 border border-yellow-700/60',
