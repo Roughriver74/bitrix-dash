@@ -403,11 +403,12 @@ export function TaskTable({
 				if (typeof window !== 'undefined') {
 					const saved = localStorage.getItem(`collapsedGroups_${groupBy}`)
 					if (saved) {
-						const savedGroups = new Set(JSON.parse(saved))
+						const parsed = JSON.parse(saved) as string[]
+						const savedGroups = new Set<string>(parsed)
 						const currentGroupKeys = Object.keys(groupedTasks)
 						// Фильтруем только существующие группы
 						const validSavedGroups = new Set(
-							Array.from(savedGroups).filter(key =>
+							Array.from(savedGroups).filter((key: string) =>
 								currentGroupKeys.includes(key)
 							)
 						)
