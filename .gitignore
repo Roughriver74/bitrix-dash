@@ -40,5 +40,13 @@ config.json
 
 # database
 .data/
+*.db
+*.db-journal
+
+# local dev screenshots (root only)
+/*.png
+
+# playwright mcp output
+/.playwright-mcp/
 
 /lib/generated/prisma

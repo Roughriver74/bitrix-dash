@@ -19,6 +19,7 @@ import {
 import { BitrixTask, BitrixUser } from '@/lib/bitrix/types';
 import { prisma } from '@/lib/prisma';
 import { BitrixSyncService } from '@/lib/sync/bitrix';
+import { requireAdmin } from '@/lib/auth';
 
 interface UsersMap {
   [id: string]: {
@@ -265,6 +266,9 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const auth = requireAdmin(request);
+  if (auth) return auth;
+
   try {
     const payload = (await request.json()) as CreatePayload;
     if (!payload?.title || !payload?.responsibleId) {
@@ -319,6 +323,9 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
+  const auth = requireAdmin(request);
+  if (auth) return auth;
+
   try {
     const payload = (await request.json()) as UpdatePayload | ReorderPayload;
 
@@ -385,44 +392,6 @@ export async function PATCH(request: Request) {
     }
 
     const errorMessage = error instanceof Error ? error.message : 'Не удалось обновить задачу';
-    return NextResponse.json(
-      { error: errorMessage },
-      { status: 500 },
-    );
-  }
-}
-
-export async function DELETE(request: Request) {
-  try {
-    const { searchParams } = new URL(request.url);
-    const taskId = searchParams.get('id');
-
-    if (!taskId) {
-      return NextResponse.json(
-        { error: 'Параметр id обязателен' },
-        { status: 400 },
-      );
-    }
-
-    const { taskService } = await getTaskServiceContext(false);
-
-    const deleted = await taskService.deleteTask(taskId);
-    if (!deleted) {
-      return NextResponse.json(
-        { error: 'Задача не удалена' },
-        { status: 500 },
-      );
-    }
-
-    return NextResponse.json({ success: true });
-  } catch (error) {
-    console.error('❌ Tasks DELETE error:', error);
-    if (error instanceof Error) {
-      console.error('❌ Error message:', error.message);
-      console.error('❌ Stack trace:', error.stack);
-    }
-
-    const errorMessage = error instanceof Error ? error.message : 'Не удалось удалить задачу';
     return NextResponse.json(
       { error: errorMessage },
       { status: 500 },

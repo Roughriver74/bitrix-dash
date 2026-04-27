@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Plus, RefreshCw, Lock, Unlock } from 'lucide-react'
+import { Plus, RefreshCw, ShieldCheck, ShieldOff } from 'lucide-react'
 import { TaskForm, TaskFormValues } from '@/components/tasks/TaskForm'
 import { TaskTable } from '@/components/tasks/TaskTable'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
@@ -92,6 +92,16 @@ function TasksPageContent() {
 		fetchTasks()
 	}, [fetchTasks])
 
+	// Проверяем, есть ли уже сохранённая сессия администратора
+	useEffect(() => {
+		fetch('/api/auth/me')
+			.then(r => (r.ok ? r.json() : null))
+			.then(data => {
+				if (data?.isAdmin) setIsAdminMode(true)
+			})
+			.catch(() => {})
+	}, [])
+
 	// Полная синхронизация с Bitrix раз в час (независимо от autoRefresh)
 	useEffect(() => {
 		// Устанавливаем интервал для синхронизации раз в час
@@ -119,16 +129,30 @@ function TasksPageContent() {
 
 	const activeTasks = useMemo(() => sortByOrder(tasks), [tasks])
 
-	const handleAdminToggle = () => {
+	const handleAdminToggle = async () => {
 		if (isAdminMode) {
+			try {
+				await fetch('/api/auth/logout', { method: 'POST' })
+			} catch {}
 			setIsAdminMode(false)
-		} else {
-			const password = window.prompt('Введите пароль администратора:')
-			if (password === 'admin') {
+			return
+		}
+		const password = window.prompt('Введите пароль администратора:')
+		if (password === null || password === '') return
+		try {
+			const response = await fetch('/api/auth/login', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ password }),
+			})
+			if (response.ok) {
 				setIsAdminMode(true)
-			} else if (password !== null) {
-				alert('Неверный пароль')
+			} else {
+				const data = await response.json().catch(() => ({}))
+				alert(data?.error || 'Неверный пароль')
 			}
+		} catch {
+			alert('Не удалось войти — проверьте подключение')
 		}
 	}
 
@@ -217,30 +241,6 @@ function TasksPageContent() {
 			)
 		} finally {
 			setSubmitting(false)
-		}
-	}
-
-	const handleDelete = async (task: TaskListItem) => {
-		const confirmed = window.confirm(
-			`Удалить задачу «${task.title}»? Это действие нельзя отменить.`
-		)
-		if (!confirmed) return
-
-		const previous = tasks.map(item => ({ ...item }))
-		setTasks(prev => prev.filter(item => item.id !== task.id))
-
-		try {
-			const response = await fetch(`/api/tasks?id=${task.id}`, {
-				method: 'DELETE',
-			})
-
-			if (!response.ok) {
-				throw new Error(await extractError(response))
-			}
-		} catch (err) {
-			console.error(err)
-			setError(err instanceof Error ? err.message : 'Не удалось удалить задачу')
-			setTasks(previous)
 		}
 	}
 
@@ -342,60 +342,35 @@ function TasksPageContent() {
 							)}
 						</p>
 					</div>
-					<div className='flex flex-wrap gap-3'>
-						<button
-							type='button'
-							onClick={handleAdminToggle}
-							className={`inline-flex items-center gap-2 rounded-lg border px-4 py-2 text-sm font-semibold transition-all duration-200 active:scale-95 ${
-								isAdminMode
-									? 'border-red-600/40 bg-red-600/10 text-red-200 hover:bg-red-600/20 hover:border-red-500 hover:shadow-lg hover:shadow-red-500/20'
-									: 'border-gray-600/40 bg-gray-600/10 text-gray-200 hover:bg-gray-600/20 hover:border-gray-500'
-							}`}
-						>
-							{isAdminMode ? (
-								<>
-									<Unlock className='h-4 w-4' />
-									Админ: ВКЛ
-								</>
-							) : (
-								<>
-									<Lock className='h-4 w-4' />
-									Админ: ВЫКЛ
-								</>
-							)}
-						</button>
-						<button
-							type='button'
+					<div className='flex flex-wrap items-center gap-2'>
+						<ToggleSwitch
+							label='Авто-обновление'
+							hint='раз в час из Bitrix'
+							active={autoRefresh}
 							onClick={toggleAutoRefresh}
-							className={`inline-flex items-center gap-2 rounded-lg border px-4 py-2 text-sm font-semibold transition-all duration-200 active:scale-95 ${
-								autoRefresh
-									? 'border-green-600/40 bg-green-600/10 text-green-200 hover:bg-green-600/20 hover:border-green-500 hover:shadow-lg hover:shadow-green-500/20'
-									: 'border-gray-600/40 bg-gray-600/10 text-gray-200 hover:bg-gray-600/20 hover:border-gray-500'
-							}`}
-							title={autoRefresh ? 'Автообновление включено (БД: каждые 60 сек, Bitrix: раз в час)' : 'Автообновление выключено'}
-						>
-							<RefreshCw
-								className={autoRefresh ? 'h-4 w-4 animate-spin' : 'h-4 w-4'}
-							/>
-							{autoRefresh ? 'Авто: ВКЛ' : 'Авто: ВЫКЛ'}
-						</button>
+						/>
+						<ToggleSwitch
+							label='Режим редактирования'
+							hint={isAdminMode ? 'разрешены изменения' : 'нужен пароль'}
+							active={isAdminMode}
+							onClick={handleAdminToggle}
+							icon={isAdminMode ? <ShieldCheck className='h-4 w-4' /> : <ShieldOff className='h-4 w-4' />}
+						/>
 						<button
 							type='button'
 							onClick={handleRefresh}
-							className='inline-flex items-center gap-2 rounded-lg border border-blue-600/40 bg-blue-600/10 px-4 py-2 text-sm font-semibold text-blue-200 transition-all duration-200 hover:bg-blue-600/20 hover:border-blue-500 hover:shadow-lg hover:shadow-blue-500/20 active:scale-95'
+							className='inline-flex items-center gap-2 rounded-lg border border-blue-600/40 bg-blue-600/10 px-3 py-2 text-sm font-semibold text-blue-200 transition-all duration-200 hover:bg-blue-600/20 hover:border-blue-500 hover:shadow-lg hover:shadow-blue-500/20 active:scale-95 disabled:opacity-50'
 							disabled={loading}
-							title={lastUpdate ? `Последнее обновление: ${lastUpdate.toLocaleTimeString('ru-RU')}` : 'Обновить список задач'}
+							title={lastUpdate ? `Последнее обновление: ${lastUpdate.toLocaleTimeString('ru-RU')}` : 'Перечитать задачи из БД'}
 						>
-							<RefreshCw
-								className={loading ? 'h-4 w-4 animate-spin' : 'h-4 w-4'}
-							/>
+							<RefreshCw className={loading ? 'h-4 w-4 animate-spin' : 'h-4 w-4'} />
 							Обновить
 						</button>
 						{isAdminMode && (
 							<button
 								type='button'
 								onClick={handleOpenCreate}
-								className='inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-green-600 to-emerald-600 px-4 py-2 text-sm font-semibold text-white transition-all duration-200 hover:from-green-500 hover:to-emerald-500 hover:shadow-lg hover:shadow-green-500/30 active:scale-95'
+								className='inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-green-600 to-emerald-600 px-3 py-2 text-sm font-semibold text-white transition-all duration-200 hover:from-green-500 hover:to-emerald-500 hover:shadow-lg hover:shadow-green-500/30 active:scale-95'
 							>
 								<Plus className='h-4 w-4' />
 								Новая задача
@@ -419,7 +394,6 @@ function TasksPageContent() {
 					onReorder={handleReorder}
 					onEdit={handleEdit}
 					onComplete={handleComplete}
-					onDelete={handleDelete}
 					onDepartmentCreated={(department) => {
 						// Добавляем новый отдел в локальный список
 						setDepartments(prev => [...prev, department])
@@ -534,4 +508,52 @@ async function extractError(response: Response) {
 
 function sortByOrder(items: TaskListItem[]) {
 	return [...items].sort((a, b) => a.order - b.order)
+}
+
+function ToggleSwitch({
+	label,
+	hint,
+	active,
+	onClick,
+	icon,
+}: {
+	label: string
+	hint?: string
+	active: boolean
+	onClick: () => void
+	icon?: React.ReactNode
+}) {
+	return (
+		<button
+			type='button'
+			role='switch'
+			aria-checked={active}
+			onClick={onClick}
+			title={hint}
+			className={`inline-flex items-center gap-2.5 rounded-lg border px-3 py-2 text-sm transition-all duration-200 active:scale-95 ${
+				active
+					? 'border-green-500/50 bg-green-500/10 text-green-100 hover:bg-green-500/20'
+					: 'border-gray-600/40 bg-gray-800/40 text-gray-300 hover:border-gray-500 hover:bg-gray-700/40'
+			}`}
+		>
+			{icon}
+			<span className='flex flex-col items-start leading-tight'>
+				<span className='font-semibold'>{label}</span>
+				{hint && (
+					<span className='text-[10px] uppercase tracking-wider opacity-70'>{hint}</span>
+				)}
+			</span>
+			<span
+				className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${
+					active ? 'bg-green-500' : 'bg-gray-600'
+				}`}
+			>
+				<span
+					className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${
+						active ? 'translate-x-3.5' : 'translate-x-0.5'
+					}`}
+				/>
+			</span>
+		</button>
+	)
 }

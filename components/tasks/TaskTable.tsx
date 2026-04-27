@@ -21,7 +21,6 @@ import {
 	GripVertical,
 	Check,
 	Edit,
-	Trash2,
 	X,
 	ChevronDown,
 	ChevronRight,
@@ -57,7 +56,6 @@ interface TaskTableProps {
 	onReorder: (tasks: TaskListItem[]) => void
 	onEdit: (task: TaskListItem) => void
 	onComplete: (task: TaskListItem) => void
-	onDelete: (task: TaskListItem) => void
 	onUpdate?: (
 		taskId: string,
 		updates: {
@@ -95,7 +93,6 @@ export function TaskTable({
 	onReorder,
 	onEdit,
 	onComplete,
-	onDelete,
 	onUpdate,
 	onDepartmentCreated,
 	onSync,
@@ -111,6 +108,8 @@ export function TaskTable({
 		department: '',
 	})
 	const [hideRequests, setHideRequests] = useState(true)
+	type QuickFlag = 'overdue' | 'p0' | 'noResponsible' | null
+	const [quickFlag, setQuickFlag] = useState<QuickFlag>(null)
 	const [groupBy, setGroupBy] = useState<GroupBy>('priority')
 	const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => {
 		if (typeof window !== 'undefined') {
@@ -122,7 +121,18 @@ export function TaskTable({
 	const [previousGroupBy, setPreviousGroupBy] = useState<GroupBy>(groupBy)
 	const previousGroupKeysRef = useRef<Set<string>>(new Set())
 	const [showStats, setShowStats] = useState(false)
-	const [compactMode, setCompactMode] = useState(false)
+	// Авто-компакт на узких экранах: до 1600px колонок слишком много, без компакта правые обрезаются
+	const [compactMode, setCompactMode] = useState<boolean>(() => {
+		if (typeof window === 'undefined') return false
+		return window.matchMedia('(max-width: 1600px)').matches
+	})
+	useEffect(() => {
+		if (typeof window === 'undefined') return
+		const mq = window.matchMedia('(max-width: 1600px)')
+		const handler = (e: MediaQueryListEvent) => setCompactMode(e.matches)
+		mq.addEventListener('change', handler)
+		return () => mq.removeEventListener('change', handler)
+	}, [])
 	const [excludedTaskIds, setExcludedTaskIds] = useState<Set<string>>(() => {
 		if (typeof window !== 'undefined') {
 			const saved = localStorage.getItem('excludedTaskIds')
@@ -199,9 +209,17 @@ export function TaskTable({
 				!task.title.toLowerCase().includes(filters.searchQuery.toLowerCase())
 			)
 				return false
+			if (quickFlag === 'overdue' && !task.isOverdue) return false
+			if (quickFlag === 'p0' && task.metadata.p !== 'P0') return false
+			if (
+				quickFlag === 'noResponsible' &&
+				task.responsibleName &&
+				task.responsibleName.trim() !== ''
+			)
+				return false
 			return true
 		})
-	}, [tasks, filters, hideRequests, excludedTaskIds])
+	}, [tasks, filters, hideRequests, excludedTaskIds, quickFlag])
 
 	const clearFilters = () => {
 		setFilters({
@@ -215,10 +233,11 @@ export function TaskTable({
 			department: '',
 		})
 		setHideRequests(false)
+		setQuickFlag(null)
 	}
 
 	const hasActiveFilters =
-		Object.values(filters).some(f => f !== '') || hideRequests
+		Object.values(filters).some(f => f !== '') || hideRequests || quickFlag !== null
 
 	// Сортируем задачи по приоритету P0-P3
 	const sortedTasks = useMemo(() => {
@@ -317,6 +336,10 @@ export function TaskTable({
 				low: sortedTasks.filter(t => t.metadata.impact === 'Слабое').length,
 			},
 			overdue: sortedTasks.filter(t => t.isOverdue).length,
+			p0: sortedTasks.filter(t => t.metadata.p === 'P0').length,
+			noResponsible: sortedTasks.filter(
+				t => !t.responsibleName || t.responsibleName.trim() === ''
+			).length,
 		}
 	}, [sortedTasks])
 
@@ -412,24 +435,30 @@ export function TaskTable({
 								currentGroupKeys.includes(key)
 							)
 						)
-						// Добавляем новые группы как свернутые
+						// Новые группы: применяем дефолт (горящие — раскрыты)
+						const defaultCollapsed = new Set(
+							getDefaultCollapsedGroups(groupedTasks, groupBy)
+						)
 						currentGroupKeys.forEach(key => {
-							if (key !== 'Все задачи' && !validSavedGroups.has(key)) {
+							if (
+								key !== 'Все задачи' &&
+								!validSavedGroups.has(key) &&
+								!savedGroups.has(key) &&
+								defaultCollapsed.has(key)
+							) {
 								validSavedGroups.add(key)
 							}
 						})
 						setCollapsedGroups(validSavedGroups)
 					} else {
-						// Если нет сохраненного состояния, сворачиваем все кроме "Все задачи"
-						const allGroupKeys = Object.keys(groupedTasks)
+						// Нет сохранённого состояния: разворачиваем «горящее» (P0 и группы с просроченными)
 						setCollapsedGroups(
-							new Set(allGroupKeys.filter(key => key !== 'Все задачи'))
+							new Set(getDefaultCollapsedGroups(groupedTasks, groupBy))
 						)
 					}
 				} else {
-					const allGroupKeys = Object.keys(groupedTasks)
 					setCollapsedGroups(
-						new Set(allGroupKeys.filter(key => key !== 'Все задачи'))
+						new Set(getDefaultCollapsedGroups(groupedTasks, groupBy))
 					)
 				}
 			} else {
@@ -458,11 +487,14 @@ export function TaskTable({
 
 		// Обновляем состояние только если структура групп действительно изменилась
 		if (groupsAdded.length > 0 || groupsRemoved.length > 0) {
+			const defaultCollapsed = new Set(
+				getDefaultCollapsedGroups(groupedTasks, groupBy)
+			)
 			setCollapsedGroups(prev => {
 				const updated = new Set(prev)
-				// Добавляем только действительно новые группы как свернутые
+				// Новые группы: сворачиваем только «не горящие»
 				groupsAdded.forEach(key => {
-					if (key !== 'Все задачи') {
+					if (key !== 'Все задачи' && defaultCollapsed.has(key)) {
 						updated.add(key)
 					}
 				})
@@ -516,8 +548,40 @@ export function TaskTable({
 		})
 	}
 
+	const toggleQuickFlag = (flag: NonNullable<QuickFlag>) =>
+		setQuickFlag(prev => (prev === flag ? null : flag))
+
 	return (
 		<div className='overflow-hidden rounded-xl border border-gray-800 bg-gradient-to-b from-gray-900 to-gray-900/95 shadow-2xl backdrop-blur-sm'>
+			{/* «Что горит» — KPI-строка над таблицей */}
+			{(stats.overdue > 0 || stats.p0 > 0 || stats.noResponsible > 0) && (
+				<div className='flex flex-wrap gap-2 border-b border-gray-700/50 bg-gray-900/40 px-4 py-3'>
+					<KpiChip
+						label='Просрочено'
+						count={stats.overdue}
+						tone='red'
+						active={quickFlag === 'overdue'}
+						onClick={() => toggleQuickFlag('overdue')}
+						hidden={stats.overdue === 0}
+					/>
+					<KpiChip
+						label='P0 — горит'
+						count={stats.p0}
+						tone='orange'
+						active={quickFlag === 'p0'}
+						onClick={() => toggleQuickFlag('p0')}
+						hidden={stats.p0 === 0}
+					/>
+					<KpiChip
+						label='Без ответственного'
+						count={stats.noResponsible}
+						tone='yellow'
+						active={quickFlag === 'noResponsible'}
+						onClick={() => toggleQuickFlag('noResponsible')}
+						hidden={stats.noResponsible === 0}
+					/>
+				</div>
+			)}
 			{/* Панель управления */}
 			<div className='bg-gradient-to-r from-gray-800/60 via-gray-800/50 to-gray-800/60 px-4 py-3 border-b border-gray-700/50 backdrop-blur-md'>
 				<div className='flex flex-wrap items-center gap-3'>
@@ -727,7 +791,6 @@ export function TaskTable({
 								task={task}
 								onComplete={onComplete}
 								onEdit={onEdit}
-								onDelete={onDelete}
 								isAdminMode={isAdminMode}
 							/>
 						))
@@ -765,8 +828,7 @@ export function TaskTable({
 													task={task}
 													onComplete={onComplete}
 													onEdit={onEdit}
-													onDelete={onDelete}
-													isAdminMode={isAdminMode}
+																		isAdminMode={isAdminMode}
 												/>
 											))}
 										</div>
@@ -805,7 +867,7 @@ export function TaskTable({
 									<th className='w-32 px-4 py-3'>Система</th>
 									<th className='w-40 px-4 py-3'>Отделы</th>
 									<th className='w-24 px-4 py-3'>Приоритет</th>
-									<th className='w-32 px-4 py-3 text-right'>Действия</th>
+									<th className='w-32 px-4 py-3 text-right sticky right-0 z-20 bg-gray-800/95 backdrop-blur-sm shadow-[-8px_0_8px_-8px_rgba(0,0,0,0.5)]'>Действия</th>
 								</tr>
 								<tr className='bg-gray-800/90 border-t border-gray-700'>
 									<th className='px-2 py-2'></th>
@@ -943,7 +1005,7 @@ export function TaskTable({
 											))}
 										</select>
 									</th>
-									<th className='px-2 py-2'></th>
+									<th className='px-2 py-2 sticky right-0 z-20 bg-gray-800/90 backdrop-blur-sm'></th>
 								</tr>
 							</thead>
 							<tbody className='text-sm text-gray-200'>
@@ -1018,8 +1080,7 @@ export function TaskTable({
 											availableDepartments={departments}
 											onEdit={onEdit}
 											onComplete={onComplete}
-											onDelete={onDelete}
-											onExclude={() => handleExclude(task.id)}
+														onExclude={() => handleExclude(task.id)}
 											compactMode={compactMode}
 											onUpdate={onUpdate}
 											onDepartmentCreated={onDepartmentCreated}
@@ -1060,8 +1121,7 @@ export function TaskTable({
 															availableDepartments={departments}
 															onEdit={onEdit}
 															onComplete={onComplete}
-															onDelete={onDelete}
-															onExclude={() => handleExclude(task.id)}
+																						onExclude={() => handleExclude(task.id)}
 															compactMode={compactMode}
 															onUpdate={onUpdate}
 															onDepartmentCreated={onDepartmentCreated}
@@ -1084,7 +1144,6 @@ interface SortableRowProps {
 	task: TaskListItem
 	onEdit: (task: TaskListItem) => void
 	onComplete: (task: TaskListItem) => void
-	onDelete: (task: TaskListItem) => void
 	onExclude: () => void
 	compactMode?: boolean
 	isAdminMode?: boolean
@@ -1119,7 +1178,6 @@ function SortableRow({
 	task,
 	onEdit,
 	onComplete,
-	onDelete,
 	onExclude,
 	compactMode = false,
 	isAdminMode = false,
@@ -1382,7 +1440,7 @@ function SortableRow({
 					disabled={!isAdminMode}
 				/>
 			</td>
-			<td className={clsx(cellPadding, 'text-right')}>
+			<td className={clsx(cellPadding, 'text-right sticky right-0 z-10 bg-gray-900/95 backdrop-blur-sm shadow-[-8px_0_8px_-8px_rgba(0,0,0,0.5)]')}>
 				<div className='flex justify-end gap-2'>
 					{isAdminMode && (
 						<>
@@ -1881,13 +1939,11 @@ function MobileTaskCard({
 	task,
 	onComplete,
 	onEdit,
-	onDelete,
 	isAdminMode,
 }: {
 	task: TaskListItem
 	onComplete: (task: TaskListItem) => void
 	onEdit: (task: TaskListItem) => void
-	onDelete: (task: TaskListItem) => void
 	isAdminMode?: boolean
 }) {
 	const [expanded, setExpanded] = useState(false)
@@ -2125,17 +2181,81 @@ function MobileTaskCard({
 					>
 						<Edit className='h-3.5 w-3.5' />
 					</button>
-					<button
-						type='button'
-						onClick={() => onDelete(task)}
-						className='flex items-center justify-center rounded-lg border border-red-500/50 bg-red-500/10 px-2.5 py-1.5 text-xs font-semibold text-red-400 transition-all duration-200 active:scale-95'
-					>
-						<Trash2 className='h-3.5 w-3.5' />
-					</button>
 				</div>
 			)}
 		</div>
 	)
+}
+
+// Кликабельный KPI-чип «что горит»: счётчик + лейбл, цвет по тону, активный = выбран фильтр
+function KpiChip({
+	label,
+	count,
+	tone,
+	active,
+	onClick,
+	hidden,
+}: {
+	label: string
+	count: number
+	tone: 'red' | 'orange' | 'yellow'
+	active: boolean
+	onClick: () => void
+	hidden?: boolean
+}) {
+	if (hidden) return null
+	const palette =
+		tone === 'red'
+			? {
+					base: 'border-red-500/40 bg-red-500/10 text-red-100 hover:border-red-400 hover:bg-red-500/20',
+					on: 'border-red-400 bg-red-500/30 text-white shadow-lg shadow-red-500/20',
+					num: 'text-red-300',
+				}
+			: tone === 'orange'
+				? {
+						base: 'border-orange-500/40 bg-orange-500/10 text-orange-100 hover:border-orange-400 hover:bg-orange-500/20',
+						on: 'border-orange-400 bg-orange-500/30 text-white shadow-lg shadow-orange-500/20',
+						num: 'text-orange-300',
+					}
+				: {
+						base: 'border-yellow-500/40 bg-yellow-500/10 text-yellow-100 hover:border-yellow-400 hover:bg-yellow-500/20',
+						on: 'border-yellow-400 bg-yellow-500/30 text-white shadow-lg shadow-yellow-500/20',
+						num: 'text-yellow-200',
+					}
+	return (
+		<button
+			type='button'
+			onClick={onClick}
+			aria-pressed={active}
+			className={clsx(
+				'inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold transition-all duration-150 active:scale-95',
+				active ? palette.on : palette.base
+			)}
+		>
+			<span className={clsx('text-xl font-bold leading-none', active ? 'text-white' : palette.num)}>
+				{count}
+			</span>
+			<span className='text-xs uppercase tracking-wide'>{label}</span>
+		</button>
+	)
+}
+
+// По умолчанию раскрываем «горящие» группы: P0 (для groupBy='priority') и любую,
+// в которой есть просроченные задачи. Возвращает множество ключей групп, которые должны быть свёрнуты.
+function getDefaultCollapsedGroups(
+	groups: Record<string, TaskListItem[]>,
+	groupBy: GroupBy
+): string[] {
+	const collapsed: string[] = []
+	for (const [key, tasks] of Object.entries(groups)) {
+		if (key === 'Все задачи') continue
+		const isP0 = groupBy === 'priority' && key === 'P0'
+		const hasOverdue = tasks.some(t => t.isOverdue)
+		if (!isP0 && !hasOverdue) {
+			collapsed.push(key)
+		}
+	}
+	return collapsed
 }
 
 function getImpactTextClass(impact: string | null | undefined): string {
